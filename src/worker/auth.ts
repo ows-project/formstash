@@ -8,6 +8,8 @@ const encoder = new TextEncoder();
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  EMAIL_QUEUE: Queue<import("./delivery").EmailJob>;
+  APP_SECRET?: string;
 }
 
 export interface User {
@@ -63,18 +65,22 @@ export async function verifyPassword(password: string, encoded: string): Promise
   return difference === 0;
 }
 
-async function hashToken(token: string): Promise<string> {
+export function randomToken(): string {
+  return encode(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+export async function hashOpaqueToken(token: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(token));
   return encode(new Uint8Array(digest));
 }
 
 export async function createSession(context: Context<{ Bindings: Env; Variables: Variables }>, userId: string): Promise<void> {
-  const token = encode(crypto.getRandomValues(new Uint8Array(32)));
+  const token = randomToken();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_DAYS * 86_400_000);
   await context.env.DB.prepare(
     "INSERT INTO sessions (id_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-  ).bind(await hashToken(token), userId, expiresAt.toISOString(), now.toISOString()).run();
+  ).bind(await hashOpaqueToken(token), userId, expiresAt.toISOString(), now.toISOString()).run();
 
   setCookie(context, "formstash_session", token, {
     httpOnly: true,
@@ -88,7 +94,7 @@ export async function createSession(context: Context<{ Bindings: Env; Variables:
 export async function endSession(context: Context<{ Bindings: Env; Variables: Variables }>): Promise<void> {
   const token = getCookie(context, "formstash_session");
   if (token) {
-    await context.env.DB.prepare("DELETE FROM sessions WHERE id_hash = ?").bind(await hashToken(token)).run();
+    await context.env.DB.prepare("DELETE FROM sessions WHERE id_hash = ?").bind(await hashOpaqueToken(token)).run();
   }
   deleteCookie(context, "formstash_session", { path: "/" });
 }
@@ -101,7 +107,7 @@ export const requireUser: MiddlewareHandler<{ Bindings: Env; Variables: Variable
     `SELECT users.id, users.email
      FROM sessions JOIN users ON users.id = sessions.user_id
      WHERE sessions.id_hash = ? AND sessions.expires_at > ?`,
-  ).bind(await hashToken(token), new Date().toISOString()).first<User>();
+  ).bind(await hashOpaqueToken(token), new Date().toISOString()).first<User>();
 
   if (!row) {
     deleteCookie(context, "formstash_session", { path: "/" });

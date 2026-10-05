@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
+  Activity,
   ArrowLeft,
   Braces,
   Check,
@@ -8,6 +9,7 @@ import {
   Circle,
   Code2,
   Copy,
+  Download,
   FileText,
   FormInput,
   Inbox,
@@ -16,6 +18,7 @@ import {
   Menu,
   Plus,
   Search,
+  Settings,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -23,9 +26,11 @@ import {
 } from "lucide-react";
 import type { FormSummary, Submission, SubmissionStatus } from "../shared/types";
 import { api, ApiError } from "./api";
+import { ActivityPage, FormSettingsModal, SettingsPage } from "./ManagementPages";
 
-type Screen = "loading" | "setup" | "login" | "dashboard";
+type Screen = "loading" | "setup" | "login" | "reset" | "dashboard";
 type Filter = "all" | SubmissionStatus;
+type DashboardPage = "forms" | "activity" | "settings";
 
 interface UserInfo {
   id: string;
@@ -176,6 +181,8 @@ function SetupScreen({ onComplete }: { onComplete: (user: UserInfo) => void }) {
 function LoginScreen({ onLogin }: { onLogin: (user: UserInfo) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [forgot, setForgot] = useState(false);
+  const [requested, setRequested] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -195,17 +202,72 @@ function LoginScreen({ onLogin }: { onLogin: (user: UserInfo) => void }) {
     }
   }
 
+  async function requestReset(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await api("/api/auth/password/request", { method: "POST", body: JSON.stringify({ email }) });
+      setRequested(true);
+    } catch (caught) {
+      setError(message(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <main className="login-screen">
       <div className="login-brand"><Brand /></div>
-      <form className="login-card" onSubmit={submit}>
-        <div className="form-heading"><h1>Welcome back</h1><p>Sign in to manage your forms and submissions.</p></div>
-        <label>Email address<input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-        <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-        {error && <p className="form-error">{error}</p>}
-        <button className="primary-button wide" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
-      </form>
+      {forgot ? (
+        <form className="login-card" onSubmit={requestReset}>
+          <button className="back-button" type="button" onClick={() => { setForgot(false); setRequested(false); setError(""); }}><ArrowLeft size={15} /> Back to sign in</button>
+          <div className="form-heading"><h1>Reset your password</h1><p>{requested ? "If that account exists, a reset link has been queued." : "We’ll send a one-hour reset link through your configured SMTP server."}</p></div>
+          {!requested && <><label>Email address<input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button wide" disabled={submitting}>{submitting ? "Requesting…" : "Send reset link"}</button></>}
+          {requested && <div className="success-banner"><CheckCircle2 size={18} />Request received</div>}
+        </form>
+      ) : (
+        <form className="login-card" onSubmit={submit}>
+          <div className="form-heading"><h1>Welcome back</h1><p>Sign in to manage your forms and submissions.</p></div>
+          <label>Email address<input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+          <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+          <button className="text-button forgot-button" type="button" onClick={() => setForgot(true)}>Forgot password?</button>
+          {error && <p className="form-error">{error}</p>}
+          <button className="primary-button wide" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
+        </form>
+      )}
     </main>
+  );
+}
+
+function ResetPasswordScreen({ token, onComplete }: { token: string; onComplete: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (password !== confirmation) return setError("Passwords do not match");
+    setSubmitting(true);
+    setError("");
+    try {
+      await api("/api/auth/password/reset", { method: "POST", body: JSON.stringify({ token, password }) });
+      onComplete();
+    } catch (caught) {
+      setError(message(caught));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="login-screen"><div className="login-brand"><Brand /></div><form className="login-card" onSubmit={submit}>
+      <div className="form-heading"><h1>Choose a new password</h1><p>Use at least 12 characters.</p></div>
+      <label>New password<input autoFocus type="password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+      <label>Confirm password<input type="password" minLength={12} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>
+      {error && <p className="form-error">{error}</p>}
+      <button className="primary-button wide" disabled={submitting}>{submitting ? "Resetting…" : "Reset password"}</button>
+    </form></main>
   );
 }
 
@@ -249,6 +311,7 @@ function DetailPanel({ submission, onClose, onStatus, onDelete }: {
 }
 
 function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
+  const [page, setPage] = useState<DashboardPage>("forms");
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [selectedFormId, setSelectedFormId] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -260,6 +323,7 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
   const [notice, setNotice] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [showFormSettings, setShowFormSettings] = useState(false);
 
   const selectedForm = forms.find((form) => form.id === selectedFormId) ?? forms[0];
   const selectedSubmission = submissions.find((submission) => submission.id === selectedId) ?? null;
@@ -344,9 +408,13 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open forms"><Menu size={20} /></button>
+        {page === "forms" && <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open forms"><Menu size={20} /></button>}
         <Brand />
-        <nav><span className="nav-active"><FormInput size={17} /> Forms</span></nav>
+        <nav>
+          <button className={page === "forms" ? "nav-active" : ""} onClick={() => setPage("forms")}><FormInput size={17} /> Forms</button>
+          <button className={page === "activity" ? "nav-active" : ""} onClick={() => setPage("activity")}><Activity size={17} /> Activity</button>
+          <button className={page === "settings" ? "nav-active" : ""} onClick={() => setPage("settings")}><Settings size={17} /> Settings</button>
+        </nav>
         <div className="account-area">
           <details className="account-menu">
             <summary><span className="avatar">{user.email.slice(0, 2).toUpperCase()}</span><span>{user.email}</span><ChevronDown size={15} /></summary>
@@ -355,7 +423,7 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
         </div>
       </header>
 
-      <aside className={`forms-sidebar ${sidebarOpen ? "open" : ""}`}>
+      {page === "forms" && <aside className={`forms-sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-mobile-head"><strong>Forms</strong><button className="icon-button" onClick={() => setSidebarOpen(false)}><X size={18} /></button></div>
         <label className="search-box"><Search size={16} /><input value={formQuery} onChange={(event) => setFormQuery(event.target.value)} placeholder="Search forms…" /></label>
         <div className="sidebar-section"><span className="sidebar-label">Active</span>
@@ -367,14 +435,14 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
           {!visibleForms.length && <p className="sidebar-empty">No forms found</p>}
         </div>
         <button className="new-form-button" onClick={() => setShowNewForm(true)}><Plus size={17} /> New form</button>
-      </aside>
+      </aside>}
 
-      {selectedForm ? (
+      {page === "forms" && (selectedForm ? (
         <main className={`workspace ${selectedSubmission ? "with-detail" : ""}`}>
           <section className="inbox-pane">
             <header className="form-header">
               <div><div className="title-row"><h1>{selectedForm.name}</h1><span className="active-badge"><span /> Active</span></div><p>{selectedForm.description || "Collect submissions from your form."}</p></div>
-              <div className="header-actions"><button className="secondary-button" onClick={copyEndpoint}><Code2 size={16} /> Copy endpoint</button></div>
+              <div className="header-actions"><a className="secondary-button" href={`/api/forms/${selectedForm.id}/export.csv`}><Download size={16} /> Export</a><button className="secondary-button" onClick={copyEndpoint}><Code2 size={16} /> Copy endpoint</button><button className="secondary-button" onClick={() => setShowFormSettings(true)}><Settings size={16} /> Form settings</button></div>
             </header>
             <button className="endpoint" onClick={copyEndpoint} title="Copy endpoint">
               <span>POST</span><code className="endpoint-full">{window.location.origin}/f/{selectedForm.slug}</code><code className="endpoint-short">/f/{selectedForm.slug}</code><Copy size={16} />
@@ -408,7 +476,9 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
         </main>
       ) : (
         <main className="no-form"><FileText size={26} /><h1>Create your first form</h1><button className="primary-button" onClick={() => setShowNewForm(true)}>New form</button></main>
-      )}
+      ))}
+      {page === "activity" && <ActivityPage />}
+      {page === "settings" && <SettingsPage />}
 
       {showNewForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowNewForm(false)}>
@@ -419,6 +489,7 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
           </form>
         </div>
       )}
+      {showFormSettings && selectedForm && <FormSettingsModal form={selectedForm} onClose={() => setShowFormSettings(false)} onSaved={() => { setShowFormSettings(false); loadForms(selectedForm.id).catch((error) => setNotice(message(error))); }} />}
       {notice && <div className="toast"><CheckCircle2 size={16} /> {notice}</div>}
     </div>
   );
@@ -427,9 +498,11 @@ function Dashboard({ user, onLogout }: { user: UserInfo; onLogout: () => void })
 export function App() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [resetToken] = useState(() => new URLSearchParams(window.location.search).get("reset") ?? "");
 
   useEffect(() => {
     async function bootstrap() {
+      if (resetToken) return setScreen("reset");
       try {
         const setup = await api<{ initialized: boolean }>("/api/setup/status");
         if (!setup.initialized) return setScreen("setup");
@@ -446,10 +519,11 @@ export function App() {
       }
     }
     bootstrap();
-  }, []);
+  }, [resetToken]);
 
   if (screen === "loading") return <LoadingScreen />;
   if (screen === "setup") return <SetupScreen onComplete={(owner) => { setUser(owner); setScreen("dashboard"); }} />;
   if (screen === "login") return <LoginScreen onLogin={(owner) => { setUser(owner); setScreen("dashboard"); }} />;
+  if (screen === "reset") return <ResetPasswordScreen token={resetToken} onComplete={() => { window.history.replaceState({}, "", "/"); setScreen("login"); }} />;
   return user ? <Dashboard user={user} onLogout={() => { setUser(null); setScreen("login"); }} /> : <LoginScreen onLogin={(owner) => { setUser(owner); setScreen("dashboard"); }} />;
 }

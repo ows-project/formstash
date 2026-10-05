@@ -16,5 +16,25 @@
       "database_id": "replace-with-your-d1-database-id",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "EMAIL_QUEUE",
+        "queue": "formstash-email"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "formstash-email",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 4,
+        "dead_letter_queue": "formstash-email-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  }
 }

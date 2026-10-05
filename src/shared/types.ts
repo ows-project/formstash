@@ -9,7 +9,12 @@ export interface FormSummary {
   description: string;
   fields: string[];
   allowedOrigins: string[];
+  notificationEmail: string | null;
+  successUrl: string | null;
   isActive: boolean;
+  strictFields: boolean;
+  turnstileEnabled: boolean;
+  rateLimitPerMinute: number;
   totalCount: number;
   unreadCount: number;
   spamCount: number;
@@ -22,4 +27,31 @@ export interface Submission {
   sourceUrl: string | null;
   status: SubmissionStatus;
   receivedAt: string;
+}
+
+export interface AppSettings {
+  smtpEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: "tls" | "starttls";
+  smtpUsername: string;
+  smtpPasswordConfigured: boolean;
+  smtpFromName: string;
+  smtpFromEmail: string;
+  retentionDays: number;
+  turnstileSiteKey: string;
+  turnstileSecretConfigured: boolean;
+  encryptionReady: boolean;
+}
+
+export interface Delivery {
+  id: string;
+  formName: string | null;
+  recipient: string;
+  kind: "submission" | "password_reset" | "test";
+  status: "queued" | "retrying" | "delivered" | "failed";
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
 }
