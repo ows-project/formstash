@@ -12,7 +12,6 @@ import {
   Download,
   FileText,
   FormInput,
-  Inbox,
   LogOut,
   Mail,
   Menu,
@@ -75,7 +74,7 @@ function sourceLabel(submission: Submission): string {
 function Brand() {
   return (
     <div className="brand">
-      <span className="brand-mark"><Inbox size={19} strokeWidth={2.4} /></span>
+      <span className="brand-mark"><img src="/formstash-icon.png" alt="" /></span>
       <strong>Formstash</strong>
     </div>
   );
@@ -84,7 +83,7 @@ function Brand() {
 function LoadingScreen() {
   return (
     <main className="center-screen">
-      <div className="loading-mark"><Inbox size={24} /></div>
+      <div className="loading-mark"><img src="/formstash-icon.png" alt="" /></div>
       <p>Opening Formstash…</p>
     </main>
   );
