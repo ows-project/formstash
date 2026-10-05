@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Formstash</title>
+  <defs>
+    <linearGradient id="tray" x1="116" y1="222" x2="399" y2="438" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#347FFF" />
+      <stop offset="0.52" stop-color="#1765EC" />
+      <stop offset="1" stop-color="#0F4FC9" />
+    </linearGradient>
+    <linearGradient id="rim" x1="73" y1="250" x2="423" y2="369" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B99FF" />
+      <stop offset="0.58" stop-color="#2F7BFA" />
+      <stop offset="1" stop-color="#1761DE" />
+    </linearGradient>
+    <linearGradient id="well" x1="129" y1="227" x2="375" y2="344" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D45B6" />
+      <stop offset="1" stop-color="#07338F" />
+    </linearGradient>
+    <linearGradient id="paper" x1="167" y1="70" x2="355" y2="352" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" />
+      <stop offset="1" stop-color="#E8F1FF" />
+    </linearGradient>
+    <linearGradient id="fold" x1="337" y1="67" x2="397" y2="137" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#75ACFF" />
+      <stop offset="1" stop-color="#4088F2" />
+    </linearGradient>
+    <linearGradient id="ink" x1="169" y1="184" x2="344" y2="290" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E56DB" />
+      <stop offset="1" stop-color="#3B86FF" />
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0B3F9C" flood-opacity="0.2" />
+    </filter>
+  </defs>
+
+  <g filter="url(#softShadow)">
+    <path d="M91 248 54 292a54 54 0 0 0-13 35v76c0 31 25 56 56 56h318c31 0 56-25 56-56v-76a54 54 0 0 0-13-35l-37-44H91Z" fill="url(#tray)" />
+    <path d="m91 248-37 44a54 54 0 0 0-11 22l76 62h274l76-62a54 54 0 0 0-11-22l-37-44H91Z" fill="url(#rim)" />
+    <path d="m101 274 51-64h208l51 64-64 68H165l-64-68Z" fill="url(#well)" />
+
+    <path d="M139 58h190l77 77v183c0 16-13 29-29 29h-61c-12 0-23 6-29 17l-13 22a21 21 0 0 1-18 10 21 21 0 0 1-18-10l-13-22c-6-11-17-17-29-17h-57c-16 0-29-13-29-29V87c0-16 13-29 29-29Z" fill="url(#paper)" />
+    <path d="M329 58v48c0 16 13 29 29 29h48l-77-77Z" fill="url(#fold)" />
+    <rect x="158" y="170" width="196" height="28" rx="14" fill="url(#ink)" />
+    <rect x="158" y="224" width="196" height="28" rx="14" fill="url(#ink)" />
+    <rect x="158" y="278" width="128" height="28" rx="14" fill="url(#ink)" />
+
+    <path d="M42 317c1 5 3 10 7 14l54 45c10 9 23 13 37 13h55c12 0 23 6 29 17l7 12c5 9 15 15 25 15s20-6 25-15l7-12c6-11 17-17 29-17h55c14 0 27-4 37-13l54-45c4-4 6-9 7-14v86c0 31-25 56-56 56H98c-31 0-56-25-56-56v-86Z" fill="url(#tray)" />
+  </g>
+</svg>

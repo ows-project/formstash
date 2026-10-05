@@ -74,7 +74,7 @@ function sourceLabel(submission: Submission): string {
 function Brand() {
   return (
     <div className="brand">
-      <span className="brand-mark"><img src="/formstash-icon.png" alt="" /></span>
+      <span className="brand-mark"><img src="/formstash-icon.svg" alt="" /></span>
       <strong>Formstash</strong>
     </div>
   );
@@ -83,7 +83,7 @@ function Brand() {
 function LoadingScreen() {
   return (
     <main className="center-screen">
-      <div className="loading-mark"><img src="/formstash-icon.png" alt="" /></div>
+      <div className="loading-mark"><img src="/formstash-icon.svg" alt="" /></div>
       <p>Opening Formstash…</p>
     </main>
   );
