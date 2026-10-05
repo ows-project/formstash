@@ -13,8 +13,14 @@
     {
       "binding": "DB",
       "database_name": "formstash",
-      "database_id": "replace-with-your-d1-database-id",
+      "database_id": "6fe291de-7e69-4651-be32-c0fb53e6ea57",
       "migrations_dir": "migrations"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "waitinglist.owsproject.com",
+      "custom_domain": true
     }
   ],
   "queues": {
