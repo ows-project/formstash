@@ -202,6 +202,9 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
                   action={<Button onClick={() => setIntegrationOpen(true)}>Open integration guide</Button>}
                 >
                   <p className="m-0 mb-4">Send a test from your terminal and it appears here.</p>
+                  {!form.isActive && (
+                    <Callout tone="warning" className="mb-3 text-left">This form is paused, so the endpoint won't accept submissions until you turn it back on in form settings.</Callout>
+                  )}
                   <div className="text-left">
                     <CodeBlock label="cURL example" code={curlSnippet({ endpoint: endpointUrl(window.location.origin, form.slug), form })} />
                   </div>

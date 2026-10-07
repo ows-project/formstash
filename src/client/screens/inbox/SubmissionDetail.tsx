@@ -3,11 +3,11 @@ import { Collapsible } from "radix-ui";
 import { ArrowLeft, Braces, ChevronDown, FileQuestion, Mail, MailOpen, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Submission, SubmissionStatus } from "../../../shared/types";
 import { displayValue, formatDateTime, formatTime, humanizeField, submissionTitle } from "../../lib/format";
+import { CodeBlock } from "../../components/CodeBlock";
 import { SubmitterAvatar } from "../../components/SubmitterAvatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
-import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Skeleton } from "../../components/ui/skeleton";
 
@@ -118,9 +118,8 @@ export function SubmissionDetail({ submission, state, fieldOrder, onClose, onSta
             <Braces className="size-4 text-subtle" /> Raw JSON
             <ChevronDown className="ml-auto size-4 text-subtle transition-transform group-data-[state=open]:rotate-180" />
           </Collapsible.Trigger>
-          <Collapsible.Content className="relative mt-1 overflow-hidden rounded-xl bg-terminal ring-1 ring-white/10">
-            <pre className="m-0 max-h-72 overflow-auto p-4 pr-20 font-mono text-xs leading-relaxed text-terminal-ink">{raw}</pre>
-            <CopyButton value={raw} label="Copy" variant="glass" size="sm" className="absolute top-2.5 right-2.5" />
+          <Collapsible.Content className="mt-1">
+            <CodeBlock label="Payload" code={raw} />
           </Collapsible.Content>
         </Collapsible.Root>
       </div>

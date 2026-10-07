@@ -23,7 +23,7 @@ function TrayIllustration() {
       <div className="absolute top-0 left-8 inline-flex items-center gap-2 rounded-full bg-terminal/70 px-3 py-1.5 font-mono text-xs text-terminal-ink ring-1 ring-white/15">
         <span className="font-bold text-brand-300">POST</span>/f/waiting-list
       </div>
-            <div className="absolute inset-x-12 top-[78px] animate-tray-drop rounded-2xl bg-white p-4 text-[#0b1530] shadow-[0_18px_40px_-16px_rgb(3_11_34/0.8)]">
+            <div className="absolute inset-x-12 top-[64px] animate-tray-drop rounded-2xl bg-white p-4 text-[#0b1530] shadow-[0_18px_40px_-16px_rgb(3_11_34/0.8)]">
         <div className="flex items-center gap-3">
           <span className="grid size-9 place-items-center rounded-full bg-[linear-gradient(135deg,#6d4ae8,#4325b8)] text-xs font-bold text-white">AL</span>
           <div className="min-w-0 flex-1">

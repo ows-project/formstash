@@ -80,6 +80,12 @@ describe("fetchSnippet", () => {
     expect(code).not.toMatch(/body:\s*new FormData/);
   });
 
+  it("writes identifier keys bare and quotes the rest, like hand-written code", () => {
+    const code = fetchSnippet({ endpoint, form: { ...form, fields: ["email", "referral-code"] } });
+    expect(code).toContain(`    email: "ada@example.com",`);
+    expect(code).toContain(`    "referral-code": "Example",`);
+  });
+
   it("records the page the visitor submitted from", () => {
     expect(code).toContain("_source: location.href");
   });

@@ -83,8 +83,12 @@ export function htmlSnippet({ endpoint, form, turnstileSiteKey }: SnippetInput):
   return lines.join("\n");
 }
 
+function objectKey(key: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
+}
+
 export function fetchSnippet({ endpoint, form }: SnippetInput): string {
-  const fields = Object.entries(samplePayload(form)).map(([key, value]) => `    ${JSON.stringify(key)}: ${JSON.stringify(value)},`);
+  const fields = Object.entries(samplePayload(form)).map(([key, value]) => `    ${objectKey(key)}: ${JSON.stringify(value)},`);
   const body = [
     ...fields,
     ...(form.turnstileEnabled ? ["    _turnstile: turnstileToken, // from the Turnstile widget callback"] : []),

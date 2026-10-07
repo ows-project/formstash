@@ -1,8 +1,5 @@
-@layer theme, base, legacy, components, utilities;
-
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "./legacy.css" layer(legacy);
 
 /* Semantic tokens live on :root so Radix portals and toasts inherit them. */
 :root {
