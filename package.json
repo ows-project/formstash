@@ -10,7 +10,11 @@
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply formstash --local",
     "db:migrate:remote": "wrangler d1 migrations apply formstash --remote",
-    "deploy": "pnpm build && wrangler deploy"
+    "db:migrate:preview": "wrangler d1 migrations apply formstash-preview --remote --config wrangler.preview-migrations.jsonc",
+    "deploy": "pnpm build && wrangler deploy",
+    "ci:build": "pnpm typecheck && pnpm test && pnpm build",
+    "ci:deploy": "pnpm db:migrate:remote && wrangler deploy",
+    "ci:preview": "pnpm db:migrate:preview && wrangler preview"
   },
   "dependencies": {
     "hono": "^4.9.8",

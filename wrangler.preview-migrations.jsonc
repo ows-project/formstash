@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Only used to apply migrations to the database that branch Previews share.
+  // Keep it pointed at the same database as `previews.d1_databases` in wrangler.jsonc.
+  "d1_databases": [
+    {
+      "binding": "PREVIEW_DB",
+      "database_name": "formstash-preview",
+      "database_id": "fc61d933-e71e-4682-8cb7-6e290bf61761",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
