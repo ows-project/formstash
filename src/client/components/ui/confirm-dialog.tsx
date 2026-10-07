@@ -21,6 +21,8 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
     try {
       await onConfirm();
       onOpenChange(false);
+    } catch {
+      // The caller reports the failure; keep the dialog open so the action can be retried.
     } finally {
       setBusy(false);
     }

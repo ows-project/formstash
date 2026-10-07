@@ -158,6 +158,10 @@
     @apply outline-2 outline-offset-2 outline-ring;
   }
 
+  code, pre, kbd, samp {
+    font-variant-ligatures: none;
+  }
+
   ::selection {
     @apply bg-brand-200 text-brand-950;
   }
