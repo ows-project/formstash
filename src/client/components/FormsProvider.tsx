@@ -10,6 +10,7 @@ interface FormsContextValue {
   /** Set when the first load failed; `forms` stays `null` until a retry succeeds. */
   loadError: string | null;
   refreshForms: () => Promise<FormSummary[] | null>;
+  removeForm: (formId: string) => void;
   /** Optimistically move one submission between statuses; `null` means it was created or deleted. */
   adjustCounts: (formId: string, from: SubmissionStatus | null, to: SubmissionStatus | null) => void;
 }
@@ -48,9 +49,13 @@ export function FormsProvider({ children }: { children: ReactNode }) {
     }) ?? null);
   }, []);
 
+  const removeForm = useCallback((formId: string) => {
+    setForms((current) => current?.filter((form) => form.id !== formId) ?? null);
+  }, []);
+
   useEffect(() => { void refreshForms(); }, [refreshForms]);
 
-  const value = useMemo(() => ({ forms, loadError, refreshForms, adjustCounts }), [forms, loadError, refreshForms, adjustCounts]);
+  const value = useMemo(() => ({ forms, loadError, refreshForms, removeForm, adjustCounts }), [forms, loadError, refreshForms, removeForm, adjustCounts]);
   return <FormsContext.Provider value={value}>{children}</FormsContext.Provider>;
 }
 

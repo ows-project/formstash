@@ -445,6 +445,13 @@ app.patch("/api/forms/:formId", async (context) => {
   return context.json({ saved: true });
 });
 
+app.delete("/api/forms/:formId", async (context) => {
+  const result = await context.env.DB.prepare("DELETE FROM forms WHERE id = ?")
+    .bind(context.req.param("formId")).run();
+  if (!result.meta.changes) return context.json({ error: "Form not found" }, 404);
+  return context.body(null, 204);
+});
+
 app.get("/api/forms/:formId/export.csv", async (context) => {
   const form = await context.env.DB.prepare("SELECT name, fields_json FROM forms WHERE id = ?")
     .bind(context.req.param("formId")).first<{ name: string; fields_json: string }>();

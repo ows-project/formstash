@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import type { AppSettings, FormSummary } from "../../../shared/types";
 import { api } from "../../api";
 import { errorMessage } from "../../lib/format";
@@ -7,6 +8,7 @@ import { integrationWarnings, type IntegrationSettings } from "../../lib/snippet
 import { useForms } from "../../components/FormsProvider";
 import { Button } from "../../components/ui/button";
 import { Callout } from "../../components/ui/callout";
+import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader } from "../../components/ui/dialog";
 import { Field } from "../../components/ui/field";
 import { Input, Textarea } from "../../components/ui/input";
@@ -29,7 +31,9 @@ interface FormSettingsDialogProps {
 
 // Fields stay uncontrolled and are read with FormData; Radix switches submit "on" when checked.
 export function FormSettingsDialog({ form, open, onOpenChange }: FormSettingsDialogProps) {
-  const { refreshForms } = useForms();
+  const { refreshForms, removeForm } = useForms();
+  const [, navigate] = useLocation();
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [turnstileOn, setTurnstileOn] = useState(form.turnstileEnabled);
@@ -80,6 +84,19 @@ export function FormSettingsDialog({ form, open, onOpenChange }: FormSettingsDia
     }
   }
 
+  async function deleteForm() {
+    try {
+      await api(`/api/forms/${form.id}`, { method: "DELETE" });
+    } catch (caught) {
+      toast.error(`Couldn't delete the form. ${errorMessage(caught)}`);
+      throw caught;
+    }
+    onOpenChange(false);
+    removeForm(form.id);
+    navigate("/", { replace: true });
+    toast.success("Form deleted permanently");
+  }
+
   return (
     <Dialog open={open} onOpenChange={(next) => { setError(""); onOpenChange(next); }}>
       <DialogContent size="lg">
@@ -120,6 +137,10 @@ export function FormSettingsDialog({ form, open, onOpenChange }: FormSettingsDia
                 {turnstileWarning && <Callout tone="warning" title={turnstileWarning.title}>{turnstileWarning.body}</Callout>}
               </div>
             </Section>
+            <Section title="Delete form">
+              <p className="m-0 text-sm text-muted">Permanently delete this form and all its submissions. This cannot be undone.</p>
+              <Button type="button" variant="danger" disabled={saving} className="justify-self-start" onClick={() => setDeleteOpen(true)}>Delete form</Button>
+            </Section>
           </DialogBody>
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="secondary">Cancel</Button></DialogClose>
@@ -127,6 +148,14 @@ export function FormSettingsDialog({ form, open, onOpenChange }: FormSettingsDia
           </DialogFooter>
         </form>
       </DialogContent>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete form permanently?"
+        description={<>“{form.name}” and all its submissions will be permanently deleted. Its endpoint will stop accepting submissions. This cannot be undone.</>}
+        confirmLabel="Delete permanently"
+        onConfirm={deleteForm}
+      />
     </Dialog>
   );
 }
