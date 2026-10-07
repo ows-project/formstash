@@ -1,9 +1,11 @@
 import { Toaster as Sonner } from "sonner";
+import { useTheme } from "../ThemeProvider";
 
 export function Toaster() {
+  const { theme } = useTheme();
   return (
     <Sonner
-      theme="system"
+      theme={theme}
       position="bottom-right"
       closeButton
       toastOptions={{

@@ -28,7 +28,7 @@ function contrast(a: string, b: string): number {
 
 const themes = {
   light: tokens(block(css, ":root {")),
-  dark: tokens(block(css, "@media (prefers-color-scheme: dark)")),
+  dark: tokens(block(css, ':root[data-theme="dark"]')),
 };
 
 describe.each(Object.entries(themes))("%s theme text contrast", (_, theme) => {

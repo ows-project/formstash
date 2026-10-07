@@ -1,9 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /* Semantic tokens live on :root so Radix portals and toasts inherit them. */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   --canvas: #f3f6fc;
   --surface: #ffffff;
@@ -31,8 +33,8 @@
   --terminal-ink: #dce8ff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+:root[data-theme="dark"] {
+    color-scheme: dark;
     --canvas: #060d21;
     --surface: #0c1730;
     --surface-2: #111e3c;
@@ -56,7 +58,6 @@
 
     --terminal: #030817;
     --terminal-ink: #dce8ff;
-  }
 }
 
 @theme inline {

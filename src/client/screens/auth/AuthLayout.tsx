@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { Brand } from "../../components/Brand";
+import { ThemeToggle } from "../../components/ThemeToggle";
 
 // Gradient canvas shared by setup, sign-in, and password reset.
 export function AuthLayout({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <main className={cn("relative min-h-dvh overflow-hidden bg-auth text-white", aside && "lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]")}>
+      <div className="absolute top-4 right-4 z-10"><ThemeToggle /></div>
       {aside && <section className="relative hidden min-h-dvh flex-col px-[clamp(40px,5vw,88px)] py-12 lg:flex">{aside}</section>}
       <section className="relative flex min-h-dvh flex-col items-center justify-center gap-8 px-4 py-10 sm:px-8">
         <Brand tone="light" className={cn(aside && "lg:hidden")} />

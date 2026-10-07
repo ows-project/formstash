@@ -4,6 +4,7 @@ import type { UserInfo } from "../auth";
 import { cn } from "../lib/cn";
 import { Brand } from "./Brand";
 import { useForms } from "./FormsProvider";
+import { ThemeToggle } from "./ThemeToggle";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
@@ -61,7 +62,8 @@ export function AppHeader({ user, formsHref, onOpenForms, onSignOut }: AppHeader
             </Link>
           ))}
         </nav>
-        <div className="sm:ml-auto">
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" className="flex h-10 cursor-pointer items-center gap-2 rounded-xl px-1.5 text-sm text-brand-50 hover:bg-white/10 data-[state=open]:bg-white/15" aria-label="Account menu">
