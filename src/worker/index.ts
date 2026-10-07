@@ -496,6 +496,14 @@ app.get("/api/forms/:formId/submissions", async (context) => {
   return context.json({ submissions: rows.results.map(mapSubmission) });
 });
 
+app.get("/api/forms/:formId/submissions/:submissionId", async (context) => {
+  const row = await context.env.DB.prepare(
+    "SELECT id, form_id, payload_json, source_url, status, received_at FROM submissions WHERE id = ? AND form_id = ?",
+  ).bind(context.req.param("submissionId"), context.req.param("formId")).first<SubmissionRow>();
+  if (!row) return context.json({ error: "Submission not found" }, 404);
+  return context.json({ submission: mapSubmission(row) });
+});
+
 app.patch("/api/forms/:formId/submissions/:submissionId", async (context) => {
   const body = jsonBody(await context.req.json().catch(() => null));
   const status = body?.status;
