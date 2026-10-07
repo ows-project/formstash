@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { createSession, endSession, hashOpaqueToken, hashPassword, randomToken, requireUser, verifyPassword, type Env, type User, type Variables } from "./auth";
-import { normalizeOrigin, normalizeSourceUrl, parseSubmission, slugify, SubmissionError } from "./submissions";
+import { isHoneypotTripped, normalizeOrigin, normalizeSourceUrl, parseSubmission, slugify, SubmissionError } from "./submissions";
 import type { SubmissionPayload, SubmissionStatus } from "../shared/types";
 import { cleanupExpiredData, consumeEmailBatch, loadSettings, queuePasswordResetEmail, queueSubmissionEmail, queueTestEmail, type EmailJob } from "./delivery";
 import { decryptSecret, encryptSecret } from "./secrets";
@@ -553,7 +553,7 @@ app.post("/f/:slug", async (context) => {
   try {
     const payload = await parseSubmission(context.req.raw);
     const sourceUrl = typeof payload._source === "string" ? normalizeSourceUrl(payload._source) : null;
-    const honeypot = payload._gotcha;
+    const honeypot = isHoneypotTripped(payload._gotcha);
     const turnstileToken = typeof payload._turnstile === "string"
       ? payload._turnstile
       : typeof payload["cf-turnstile-response"] === "string" ? payload["cf-turnstile-response"] : "";
@@ -585,7 +585,7 @@ app.post("/f/:slug", async (context) => {
 
     const id = crypto.randomUUID();
     const receivedAt = new Date().toISOString();
-    const status: SubmissionStatus = typeof honeypot === "string" && honeypot ? "spam" : "unread";
+    const status: SubmissionStatus = honeypot ? "spam" : "unread";
     await context.env.DB.prepare(
       `INSERT INTO submissions (id, form_id, payload_json, source_url, status, idempotency_key, received_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
