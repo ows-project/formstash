@@ -7,7 +7,7 @@ Formstash is a single-tenant, self-hosted form collector for Cloudflare Workers.
 - A deployment belongs to one owner; there is no public registration.
 - First run creates the owner and first form in one guided flow.
 - Forms are headless and accept JSON or native HTML form submissions.
-- Submitted fields are flexible by default. Strict validation can be enabled per form.
+- Submitted fields are flexible by default. Optional Zod-backed schemas drop unknown fields and reject submissions that fail required, type, or validation rules.
 - Submission IP address, country, and user agent are not stored.
 - The dashboard uses an inbox and detail pane rather than an analytics homepage.
 - Email delivery uses SMTP through Cloudflare Queues. It follows the core collection flow so failed email never loses a submission.
@@ -27,6 +27,8 @@ Cloudflare resources are provisioned with Wrangler. D1 remains the source of tru
 - `POST /f/:slug`
 - Content types: `application/json`, `application/x-www-form-urlencoded`, and text-only `multipart/form-data`.
 - Maximum encoded body size: 64 KiB; maximum 50 fields.
+- Payloads are flat objects of scalar values (string, number, boolean, null); strings are limited to 10,000 characters. Display fields do not enforce a schema.
+- Enforced schemas validate before storage/delivery. Errors return `422` with per-field messages. Optional missing fields are accepted; present fields must validate. Unknown fields are dropped, and an empty sanitized object is valid when nothing is required.
 - Optional idempotency through the `Idempotency-Key` header or `_idempotency_key` field.
 - `_source` records the page URL supplied by the integrator; `_gotcha` is the honeypot; `_turnstile` or `cf-turnstile-response` carries a Turnstile token.
 - Configured browser origins are enforced when an `Origin` header is present. Requests without an origin remain available for server-to-server integrations.

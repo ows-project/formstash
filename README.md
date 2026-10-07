@@ -69,3 +69,59 @@ curl https://your-worker.example/f/waiting-list \
 ```
 
 Native HTML forms using URL-encoded or multipart text fields are also accepted. File uploads are not supported. See [`docs/PLAN.md`](docs/PLAN.md) for the product contract and deployment scope.
+
+## Optional submission schemas
+
+New forms accept any field name by default, within the existing limits: a flat object of string, number, boolean, or null values, up to 50 fields, 10,000 characters per string, and a 64 KiB request. Display fields only control inbox columns and example snippets; they are not a schema.
+
+In **Form settings → Submission schema**, add named fields, choose their types and validation rules, then turn on **Enforce schema**. Unknown fields are dropped. Missing or blank required fields, wrong types, and failed rules reject the entire submission with HTTP `422`. Only validated, transformed data is stored and included in email notifications. Optional fields may be absent; if present, they must pass validation. Required treats whitespace-only strings and null as empty, but accepts `0` and `false`. Use a boolean `equals: true` rule for consent.
+
+Schema configuration is available as `schema` in the authenticated forms API; `strictFields` enables enforcement. For example, include these settings in the form settings PATCH:
+
+```json
+{
+  "strictFields": true,
+  "schema": [
+    {
+      "name": "email",
+      "type": "string",
+      "required": true,
+      "rules": [{ "check": "trim" }, { "check": "email" }]
+    },
+    {
+      "name": "age",
+      "type": "number",
+      "rules": [{ "check": "int" }, { "check": "min", "value": 18 }]
+    },
+    {
+      "name": "username",
+      "type": "string",
+      "rules": [{ "check": "forbiddenCharacters", "value": "<>$" }]
+    },
+    { "name": "department", "type": "enum", "values": ["sales", "support"] }
+  ]
+}
+```
+
+Rules run in order using Zod on the backend. Each rule has a `check`, an optional `value`, optional `options`, and an optional custom `message`. The UI lists supported checks:
+
+- **Strings:** min/max/exact length, nonempty, includes/startsWith/endsWith, lowercase/uppercase, and trim/case/Unicode normalization transformations.
+- **String formats:** email, URL/HTTP URL, UUID/GUID and ID formats, IP/CIDR/MAC, base64/base64url, E.164 phone, JWT, credit card, IBAN, hostname, hex/hash, currency code, and ISO date/time/datetime/duration.
+- **Numbers:** inclusive/exclusive bounds, integer/safe integer, positive/negative/nonnegative/nonpositive, multipleOf/step, and float32/float64/int32/uint32 checks.
+- **Boolean:** `equals` with `true` or `false`. **Enum:** a list of allowed strings. **Scalar:** any existing scalar type, useful for an allowlist without type restrictions and for migrating old strict forms.
+- **Custom patterns:** `regex` uses safe RE2 syntax with optional `options.flags` (`i`, `m`, `s`). Backreferences and lookarounds are not supported. `forbiddenCharacters` needs no regex.
+
+Format options include datetime `offset`/`local`/`precision`, time `precision`, UUID `version`, JWT `alg`, MAC `delimiter`, and URL `normalize`. Hash takes its algorithm as `value` and optional `options.enc`. Invalid rule names, options, and patterns are rejected when saving settings, even if enforcement is off. Up to 50 schema fields and 20 rules per field are supported.
+
+Native HTML numeric strings are converted only when they represent decimal numbers; empty strings never become zero. Boolean fields accept JSON booleans and HTML `true`/`on`/`false`. Optional fields can explicitly allow null with `nullable: true`.
+
+Validation errors have the following shape:
+
+```json
+{
+  "error": "Submission failed schema validation",
+  "errors": { "email": ["This field is required"] }
+}
+```
+
+This exposes Zod's built-in validations for the supported flat JSON field types, not executable Zod code. Function-based custom refinements/transforms, non-JSON types, nested objects/arrays, and file validators are not supported. Reserved metadata fields (`_source`, `_gotcha`, `_idempotency_key`, `_turnstile`, `cf-turnstile-response`) are processed separately before schema validation. Existing strict forms migrate to optional scalar schemas; extra fields now get dropped instead of rejected.

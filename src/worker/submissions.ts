@@ -4,7 +4,7 @@ export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_FIELDS = 50;
 
 export class SubmissionError extends Error {
-  constructor(message: string, readonly status: 400 | 413 | 415 | 422 = 400) {
+  constructor(message: string, readonly status: 400 | 413 | 415 | 422 = 400, readonly errors?: Record<string, string[]>) {
     super(message);
   }
 }
@@ -19,10 +19,9 @@ function validatePayload(value: unknown): SubmissionPayload {
   }
 
   const entries = Object.entries(value);
-  if (entries.length === 0) throw new SubmissionError("At least one field is required", 422);
   if (entries.length > MAX_FIELDS) throw new SubmissionError(`A submission can contain at most ${MAX_FIELDS} fields`, 422);
 
-  const payload: SubmissionPayload = {};
+  const payload: SubmissionPayload = Object.create(null);
   for (const [key, entry] of entries) {
     if (!key.trim() || key.length > 100) throw new SubmissionError("Field names must be between 1 and 100 characters", 422);
     if (!isValue(entry)) throw new SubmissionError(`Field "${key}" must contain a scalar value`, 422);
@@ -67,7 +66,7 @@ export async function parseSubmission(request: Request): Promise<SubmissionPaylo
   if (contentType.includes("multipart/form-data")) {
     const clone = new Request(request.url, { method: "POST", headers: request.headers, body: bytes });
     const data = await clone.formData();
-    const payload: Record<string, string> = {};
+    const payload: Record<string, string> = Object.create(null);
     for (const [key, value] of data.entries()) {
       if (typeof value !== "string") throw new SubmissionError("File uploads are not supported", 422);
       payload[key] = value;

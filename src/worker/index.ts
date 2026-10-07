@@ -4,6 +4,7 @@ import { isHoneypotTripped, normalizeOrigin, normalizeSourceUrl, parseSubmission
 import type { SubmissionPayload, SubmissionStatus } from "../shared/types";
 import { cleanupExpiredData, consumeEmailBatch, loadSettings, queuePasswordResetEmail, queueSubmissionEmail, queueTestEmail, type EmailJob } from "./delivery";
 import { decryptSecret, encryptSecret } from "./secrets";
+import { parseFormSchema, validateFormPayload } from "./schema";
 
 type AppContext = { Bindings: Env; Variables: Variables };
 
@@ -13,6 +14,7 @@ interface FormRow {
   slug: string;
   description: string;
   fields_json: string;
+  schema_json: string;
   allowed_origins_json: string;
   notification_email: string | null;
   success_url: string | null;
@@ -55,6 +57,7 @@ function mapForm(row: FormRow) {
     successUrl: row.success_url,
     isActive: Boolean(row.is_active),
     strictFields: Boolean(row.strict_fields),
+    schema: JSON.parse(row.schema_json),
     turnstileEnabled: Boolean(row.turnstile_enabled),
     rateLimitPerMinute: row.rate_limit_per_minute,
     totalCount: row.total_count,
@@ -427,19 +430,28 @@ app.patch("/api/forms/:formId", async (context) => {
     : typeof body?.notificationEmail === "string" ? body.notificationEmail.trim().toLowerCase() : null;
   const successUrl = cleanHttpUrl(body?.successUrl);
   const rateLimit = Number(body?.rateLimitPerMinute);
-  if (!name || !fields || fields.length === 0 || !allowedOrigins) return context.json({ error: "Invalid form settings" }, 422);
+  if (!name || !fields || !allowedOrigins) return context.json({ error: "Invalid form settings" }, 422);
   if (notificationEmail && !isEmail(notificationEmail)) return context.json({ error: "Invalid notification email" }, 422);
   if (body?.successUrl && !successUrl) return context.json({ error: "Success URL must use HTTP or HTTPS" }, 422);
   if (!Number.isInteger(rateLimit) || rateLimit < 0 || rateLimit > 10_000) return context.json({ error: "Rate limit must be between 0 and 10000" }, 422);
 
+  let schema;
+  try {
+    schema = parseFormSchema(body.schema ?? []);
+    if (body.strictFields && !schema.length) return context.json({ error: "Add at least one schema field before enabling enforcement" }, 422);
+  } catch (error) {
+    if (error instanceof SubmissionError) return context.json({ error: error.message }, error.status);
+    throw error;
+  }
+
   const result = await context.env.DB.prepare(
     `UPDATE forms SET name = ?, description = ?, fields_json = ?, allowed_origins_json = ?, notification_email = ?,
-       success_url = ?, is_active = ?, strict_fields = ?, turnstile_enabled = ?, rate_limit_per_minute = ?, updated_at = ?
+       success_url = ?, is_active = ?, strict_fields = ?, turnstile_enabled = ?, rate_limit_per_minute = ?, schema_json = ?, updated_at = ?
      WHERE id = ?`,
   ).bind(
     name, description, JSON.stringify(fields), JSON.stringify(allowedOrigins), notificationEmail, successUrl,
     body.isActive === false ? 0 : 1, body.strictFields ? 1 : 0, body.turnstileEnabled ? 1 : 0,
-    rateLimit, new Date().toISOString(), context.req.param("formId"),
+    rateLimit, JSON.stringify(schema), new Date().toISOString(), context.req.param("formId"),
   ).run();
   if (!result.meta.changes) return context.json({ error: "Form not found" }, 404);
   return context.json({ saved: true });
@@ -546,11 +558,11 @@ app.options("/f/:slug", async (context) => {
 
 app.post("/f/:slug", async (context) => {
   const form = await context.env.DB.prepare(
-    `SELECT id, fields_json, allowed_origins_json, notification_email, success_url, strict_fields,
+    `SELECT id, fields_json, schema_json, allowed_origins_json, notification_email, success_url, strict_fields,
             turnstile_enabled, rate_limit_per_minute
      FROM forms WHERE slug = ? AND is_active = 1`,
   ).bind(context.req.param("slug")).first<Pick<FormRow,
-    "id" | "fields_json" | "allowed_origins_json" | "notification_email" | "success_url" |
+    "id" | "fields_json" | "schema_json" | "allowed_origins_json" | "notification_email" | "success_url" |
     "strict_fields" | "turnstile_enabled" | "rate_limit_per_minute"
   >>();
   if (!form) return context.json({ error: "Form not found" }, 404);
@@ -566,7 +578,7 @@ app.post("/f/:slug", async (context) => {
   }
 
   try {
-    const payload = await parseSubmission(context.req.raw);
+    let payload = await parseSubmission(context.req.raw);
     const sourceUrl = typeof payload._source === "string" ? normalizeSourceUrl(payload._source) : null;
     const honeypot = isHoneypotTripped(payload._gotcha);
     const turnstileToken = typeof payload._turnstile === "string"
@@ -585,11 +597,9 @@ app.post("/f/:slug", async (context) => {
       return context.json({ error: "Turnstile verification failed" }, 422, headers);
     }
     if (form.strict_fields) {
-      const allowedFields = new Set(parseStringArray(form.fields_json));
-      const unknown = Object.keys(payload).filter((field) => !allowedFields.has(field));
-      if (unknown.length) return context.json({ error: `Unknown fields: ${unknown.join(", ")}` }, 422, headers);
+      payload = validateFormPayload(payload, parseFormSchema(JSON.parse(form.schema_json)));
     }
-    if (Object.keys(payload).length === 0) return context.json({ error: "At least one field is required" }, 422, headers);
+    if (!form.strict_fields && Object.keys(payload).length === 0) return context.json({ error: "At least one field is required" }, 422, headers);
 
     if (idempotencyKey) {
       const existing = await context.env.DB.prepare(
@@ -621,7 +631,7 @@ app.post("/f/:slug", async (context) => {
     }
     return context.json({ id, receivedAt }, 201, headers);
   } catch (error) {
-    if (error instanceof SubmissionError) return context.json({ error: error.message }, error.status, headers);
+    if (error instanceof SubmissionError) return context.json({ error: error.message, ...(error.errors ? { errors: error.errors } : {}) }, error.status, headers);
     console.error("Failed to collect submission", error);
     return context.json({ error: "Unable to collect submission" }, 500, headers);
   }

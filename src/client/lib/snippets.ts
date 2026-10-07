@@ -1,7 +1,7 @@
 import type { AppSettings, FormSummary } from "../../shared/types";
 import { humanizeField } from "./format";
 
-type SnippetForm = Pick<FormSummary, "fields" | "turnstileEnabled">;
+type SnippetForm = Pick<FormSummary, "fields" | "turnstileEnabled"> & Partial<Pick<FormSummary, "strictFields" | "schema">>;
 
 export interface SnippetInput {
   endpoint: string;
@@ -40,6 +40,7 @@ function escapeHtml(value: string): string {
 }
 
 function fieldsOf(form: SnippetForm): string[] {
+  if (form.strictFields && form.schema) return form.schema.map((field) => field.name);
   return form.fields.length ? form.fields : ["email"];
 }
 
@@ -55,17 +56,31 @@ function sampleValue(field: string): string {
   return "Example";
 }
 
-function samplePayload(form: SnippetForm): Record<string, string> {
-  return Object.fromEntries(fieldsOf(form).map((field) => [field, sampleValue(field)]));
+function samplePayload(form: SnippetForm): Record<string, string | number | boolean> {
+  return Object.fromEntries(fieldsOf(form).map((name) => {
+    const field = form.strictFields ? form.schema?.find((field) => field.name === name) : undefined;
+    if (field?.type === "enum") return [name, field.values?.[0] ?? "Example"];
+    if (field?.type === "boolean") return [name, field.rules?.find((rule) => rule.check === "equals")?.value ?? true];
+    if (field?.type === "number") return [name, field.rules?.find((rule) => rule.check === "min" || rule.check === "gte")?.value ?? 1];
+    return [name, sampleValue(name)];
+  }));
 }
 
 export function htmlSnippet({ endpoint, form, turnstileSiteKey }: SnippetInput): string {
   const controls = fieldsOf(form).map((field) => {
     const name = escapeHtml(field);
-    const type = inputTypeFor(field);
+    const definition = form.strictFields ? form.schema?.find((entry) => entry.name === field) : undefined;
+    const required = definition?.required ? " required" : "";
+    if (definition?.type === "enum") {
+      const options = (definition.values ?? []).map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+      return `  <label>\n    ${escapeHtml(humanizeField(field))}\n    <select name="${name}"${required}>${options}</select>\n  </label>`;
+    }
+    const type = definition?.type === "number" ? "number" : definition?.type === "boolean" ? "checkbox"
+      : definition?.rules?.some((rule) => rule.check === "email") ? "email"
+      : definition?.rules?.some((rule) => ["url", "httpUrl"].includes(rule.check)) ? "url" : inputTypeFor(field);
     const control = type === "textarea"
-      ? `<textarea name="${name}"></textarea>`
-      : `<input type="${type}" name="${name}"${type === "email" ? " required" : ""}>`;
+      ? `<textarea name="${name}"${required}></textarea>`
+      : `<input type="${type}" name="${name}"${required}>`;
     return `  <label>\n    ${escapeHtml(humanizeField(field))}\n    ${control}\n  </label>`;
   });
 
@@ -119,7 +134,7 @@ export function curlSnippet({ endpoint, form }: SnippetInput): string {
 }
 
 export function integrationWarnings(
-  form: Pick<FormSummary, "isActive" | "successUrl" | "allowedOrigins" | "turnstileEnabled" | "strictFields" | "fields">,
+  form: Pick<FormSummary, "isActive" | "successUrl" | "allowedOrigins" | "turnstileEnabled" | "strictFields" | "fields" | "schema">,
   settings: IntegrationSettings | null,
 ): IntegrationWarning[] {
   const warnings: IntegrationWarning[] = [];
@@ -159,8 +174,8 @@ export function integrationWarnings(
     warnings.push({
       id: "strict",
       tone: "info",
-      title: "Strict fields are on",
-      body: `Submissions may only contain: ${form.fields.join(", ")}.`,
+      title: "Schema enforcement is on",
+      body: `Only ${form.schema.map((field) => field.name).join(", ")} will be stored. Other fields are dropped. Required fields and validation rules must pass; otherwise the endpoint returns 422 with errors per field. Adjust snippet values to match your rules.`,
     });
   }
   return warnings;

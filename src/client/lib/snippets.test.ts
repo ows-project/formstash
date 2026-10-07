@@ -13,6 +13,7 @@ const form: FormSummary = {
   successUrl: "https://example.com/thanks",
   isActive: true,
   strictFields: false,
+  schema: [],
   turnstileEnabled: false,
   rateLimitPerMinute: 60,
   totalCount: 0,
@@ -45,7 +46,7 @@ describe("htmlSnippet", () => {
 
   it("posts a native form to the endpoint with one control per schema field", () => {
     expect(html).toContain(`<form action="https://forms.example/f/waiting-list" method="POST">`);
-    expect(html).toContain(`<input type="email" name="email" required>`);
+    expect(html).toContain(`<input type="email" name="email">`);
     expect(html).toContain(`<input type="text" name="name">`);
     expect(html).toContain(`<textarea name="message"></textarea>`);
   });
@@ -67,6 +68,18 @@ describe("htmlSnippet", () => {
     const hostile = htmlSnippet({ endpoint, form: { ...form, fields: [`a"><script>x</script>`] } });
     expect(hostile).not.toContain("<script>x</script>");
     expect(hostile).toContain("&quot;&gt;&lt;script&gt;");
+  });
+
+  it("uses the enforced schema instead of display fields, with types and required flags", () => {
+    const html = htmlSnippet({ endpoint, form: { ...form, strictFields: true, schema: [
+      { name: "age", type: "number", required: true },
+      { name: "consent", type: "boolean" },
+      { name: "team", type: "enum", values: ["R&D", "Sales"] },
+    ] } });
+    expect(html).toContain('<input type="number" name="age" required>');
+    expect(html).toContain('<input type="checkbox" name="consent">');
+    expect(html).toContain('<option value="R&amp;D">R&amp;D</option>');
+    expect(html).not.toContain('name="email"');
   });
 });
 

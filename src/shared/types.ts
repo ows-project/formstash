@@ -2,6 +2,22 @@ export type SubmissionStatus = "unread" | "read" | "spam";
 export type PayloadValue = string | number | boolean | null;
 export type SubmissionPayload = Record<string, PayloadValue>;
 
+export interface ValidationRule {
+  check: string;
+  value?: string | number | boolean;
+  options?: Record<string, string | number | boolean>;
+  message?: string;
+}
+
+export interface SchemaField {
+  name: string;
+  type: "string" | "number" | "boolean" | "enum" | "scalar";
+  required?: boolean;
+  nullable?: boolean;
+  values?: string[];
+  rules?: ValidationRule[];
+}
+
 export interface FormSummary {
   id: string;
   name: string;
@@ -13,6 +29,7 @@ export interface FormSummary {
   successUrl: string | null;
   isActive: boolean;
   strictFields: boolean;
+  schema: SchemaField[];
   turnstileEnabled: boolean;
   rateLimitPerMinute: number;
   totalCount: number;

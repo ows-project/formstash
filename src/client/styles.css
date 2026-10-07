@@ -265,14 +265,18 @@ html[data-navigation-direction="backward"] {
   animation: sheet-out 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.motion-sheet[data-side="right"] {
+  --sheet-offset: 100%;
+}
+
 @keyframes sheet-in {
-  from { transform: translateX(-100%); }
+  from { transform: translateX(var(--sheet-offset, -100%)); }
   to { transform: translateX(0); }
 }
 
 @keyframes sheet-out {
   from { transform: translateX(0); }
-  to { transform: translateX(-100%); }
+  to { transform: translateX(var(--sheet-offset, -100%)); }
 }
 
 .inbox-layout {
