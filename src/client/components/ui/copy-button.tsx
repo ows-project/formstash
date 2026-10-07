@@ -30,7 +30,7 @@ export function CopyButton({ value, label, copiedMessage, variant = "secondary",
 
   return (
     <Button type="button" variant={variant} size={size} onClick={copy} aria-label={label ? undefined : copied ? "Copied" : "Copy"} {...props}>
-      {copied ? <Check /> : <Copy />}
+      {copied ? <Check className="motion-enter" /> : <Copy className="motion-enter" />}
       {label && (copied ? "Copied" : label)}
     </Button>
   );

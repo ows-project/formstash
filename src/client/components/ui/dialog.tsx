@@ -26,7 +26,7 @@ export function useRestoreFocus({ onOpenAutoFocus, onCloseAutoFocus }: { onOpenA
 }
 
 export const overlayClass =
-  "fixed inset-0 z-50 bg-[#030b22]/55 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0";
+  "motion-layer fixed inset-0 z-50 bg-[#030b22]/55 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0";
 
 interface DialogContentProps extends ComponentProps<typeof DialogPrimitive.Content> {
   size?: "sm" | "md" | "lg";
@@ -43,7 +43,7 @@ export function DialogContent({ className, children, size = "md", hideClose, onO
       <DialogPrimitive.Content
         className={cn(
           "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-pop outline-none",
-          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
+          "motion-layer data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           size === "sm" && "max-w-md",
           size === "md" && "max-w-lg",
           size === "lg" && "max-w-3xl",

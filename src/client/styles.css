@@ -6,6 +6,8 @@
 /* Semantic tokens live on :root so Radix portals and toasts inherit them. */
 :root {
   color-scheme: light;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-exit: cubic-bezier(0.4, 0, 1, 1);
 
   --canvas: #f3f6fc;
   --surface: #ffffff;
@@ -167,9 +169,176 @@
   /* 1ms (not 0) so Radix still receives animationend and unmounts closed layers. */
   @media (prefers-reduced-motion: reduce) {
     *, ::before, ::after {
+      animation-delay: 0ms !important;
       animation-duration: 1ms !important;
       animation-iteration-count: 1 !important;
+      transition-delay: 0ms !important;
       transition-duration: 1ms !important;
     }
   }
+}
+
+/* Menu navigation animates snapshots without retaining live outgoing pages. */
+.dashboard-content {
+  view-transition-name: dashboard-content;
+}
+
+.main-nav-indicator {
+  view-transition-name: main-nav-indicator;
+  transition: transform 280ms var(--motion-ease), width 280ms var(--motion-ease);
+}
+
+/* Capture final positions, then let the browser animate the two snapshots. */
+html[data-navigation-direction] .main-nav-indicator {
+  transition: none;
+}
+
+html[data-navigation-direction] .dashboard-content .motion-enter {
+  animation-duration: 1ms;
+}
+
+::view-transition {
+  pointer-events: none;
+}
+
+::view-transition-old(root) {
+  display: none;
+}
+
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-group(main-nav-indicator) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--motion-ease);
+}
+
+::view-transition-old(dashboard-content) {
+  animation: page-out 280ms var(--motion-ease) both;
+}
+
+::view-transition-new(dashboard-content) {
+  animation: page-in 280ms var(--motion-ease) both;
+}
+
+html[data-navigation-direction="backward"] {
+  --page-offset: -32px;
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateX(var(--page-offset, 32px)); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes page-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(calc(-1 * var(--page-offset, 32px))); }
+}
+
+/* Animate only opacity/transform for entering content; never delay interaction. */
+@utility motion-enter {
+  animation: content-enter 240ms var(--motion-ease) both;
+}
+
+@keyframes content-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Radix keeps closed layers mounted until their exit animation completes. */
+.motion-layer[data-state="open"] {
+  animation-duration: 240ms;
+  animation-timing-function: var(--motion-ease);
+}
+
+.motion-layer[data-state="closed"] {
+  animation-duration: 160ms;
+  animation-timing-function: var(--motion-exit);
+}
+
+.motion-sheet[data-state="open"] {
+  animation: sheet-in 320ms var(--motion-ease);
+}
+
+.motion-sheet[data-state="closed"] {
+  animation: sheet-out 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes sheet-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes sheet-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+.inbox-layout {
+  container-type: inline-size;
+}
+
+.submission-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  visibility: hidden;
+  transform: translateX(100%);
+  transition: transform 320ms var(--motion-ease), visibility 320ms;
+}
+
+.submission-panel[data-open="true"] {
+  visibility: visible;
+  transform: translateX(0);
+}
+
+.submission-panel-content {
+  width: 100cqw;
+}
+
+@media (width < 80rem) {
+  .inbox-list[data-detail-open="true"] {
+    visibility: hidden;
+    transition: visibility 320ms;
+  }
+}
+
+@media (width >= 80rem) {
+  .submission-panel {
+    position: relative;
+    inset: auto;
+    flex-shrink: 0;
+    width: 0;
+    transform: none;
+    transition: width 320ms var(--motion-ease), visibility 320ms;
+  }
+
+  .submission-panel[data-open="true"],
+  .submission-panel-content {
+    width: min(460px, 38cqw);
+  }
+}
+
+.motion-collapse {
+  overflow: hidden;
+}
+
+.motion-collapse[data-state="open"] {
+  animation: collapse-open 240ms var(--motion-ease);
+}
+
+.motion-collapse[data-state="closed"] {
+  animation: collapse-close 160ms var(--motion-exit);
+}
+
+@keyframes collapse-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+
+@keyframes collapse-close {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
 }

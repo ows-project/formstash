@@ -12,7 +12,7 @@ export function DropdownMenuContent({ className, sideOffset = 8, ...props }: Com
         sideOffset={sideOffset}
         className={cn(
           "z-50 min-w-48 overflow-hidden rounded-xl border border-line bg-surface p-1 text-ink shadow-pop",
-          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "motion-layer origin-(--radix-dropdown-menu-content-transform-origin) data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           className,
         )}
         {...props}

@@ -125,8 +125,10 @@ export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder
             <Braces className="size-4 text-subtle" /> Raw JSON
             <ChevronDown className="ml-auto size-4 text-subtle transition-transform group-data-[state=open]:rotate-180" />
           </Collapsible.Trigger>
-          <Collapsible.Content className="mt-1">
-            <CodeBlock label="Payload" code={raw} />
+          <Collapsible.Content className="motion-collapse">
+            <div className="pt-1">
+              <CodeBlock label="Payload" code={raw} />
+            </div>
           </Collapsible.Content>
         </Collapsible.Root>
       </div>

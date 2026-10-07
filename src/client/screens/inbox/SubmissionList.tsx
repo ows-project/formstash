@@ -30,7 +30,7 @@ export function SubmissionList({ form, submissions, selectedId, compact }: Submi
         <span className={sourceClass}>Source</span>
         <span className="w-16 shrink-0 text-right">Received</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto" aria-busy={submissions === null}>
+      <div className={cn("min-h-0 flex-1 overflow-y-auto", submissions !== null && "motion-enter")} aria-busy={submissions === null}>
         {submissions === null && Array.from({ length: 6 }, (_, index) => (
           <div key={index} className="flex h-16 items-center gap-3 border-b border-line px-4 sm:px-5">
             <Skeleton className="size-9 rounded-full" />
@@ -49,12 +49,12 @@ export function SubmissionList({ form, submissions, selectedId, compact }: Submi
               href={`/forms/${form.id}/submissions/${submission.id}`}
               aria-current={selected ? "true" : undefined}
               className={cn(
-                "relative flex h-16 items-center gap-4 border-b border-line px-4 text-sm transition-colors hover:bg-surface-2 sm:px-5",
+                "relative flex h-16 items-center gap-4 border-b border-line px-4 text-sm transition-[background-color,box-shadow] duration-200 ease-[var(--motion-ease)] hover:bg-surface-2 sm:px-5",
                 selected && "bg-accent-soft shadow-[inset_3px_0_0_var(--accent)] hover:bg-accent-soft",
               )}
             >
               <span className="flex min-w-0 flex-1 items-center gap-3">
-                <span className={cn("size-1.5 shrink-0 rounded-full", unread ? "bg-accent" : "bg-transparent")}>
+                <span className={cn("size-1.5 shrink-0 rounded-full transition-colors duration-200", unread ? "bg-accent" : "bg-transparent")}>
                   {unread && <span className="sr-only">Unread</span>}
                 </span>
                 <SubmitterAvatar submission={submission} />

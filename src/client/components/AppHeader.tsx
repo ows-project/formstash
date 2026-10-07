@@ -1,3 +1,5 @@
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { flushSync } from "react-dom";
 import { Activity, ChevronDown, Inbox, LogOut, Menu, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import type { UserInfo } from "../auth";
@@ -20,7 +22,10 @@ function isFormsPath(location: string) {
 }
 
 export function AppHeader({ user, formsHref, onOpenForms, onSignOut }: AppHeaderProps) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const transition = useRef<ViewTransition | null>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   const { forms } = useForms();
   const unread = forms?.reduce((sum, form) => sum + form.unreadCount, 0) ?? 0;
   const items = [
@@ -29,26 +34,77 @@ export function AppHeader({ user, formsHref, onOpenForms, onSignOut }: AppHeader
     { href: "/settings", label: "Settings", icon: Settings, active: location.startsWith("/settings") },
   ];
 
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const measure = () => {
+      const active = nav.querySelector<HTMLElement>('[aria-current="page"]');
+      setIndicator(active ? { left: active.offsetLeft, width: active.offsetWidth } : null);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    for (const link of nav.querySelectorAll("a")) observer.observe(link);
+    return () => observer.disconnect();
+  }, [location, unread]);
+
+  useEffect(() => () => {
+    transition.current?.skipTransition();
+    delete document.documentElement.dataset.navigationDirection;
+  }, []);
+
+  function changeMenu(event: MouseEvent<HTMLAnchorElement>, href: string, index: number) {
+    // Preserve native new-tab/modifier behavior and instant reduced-motion navigation.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const previous = items.findIndex((item) => item.active);
+    if (previous === index) {
+      transition.current?.skipTransition();
+      transition.current = null;
+      delete document.documentElement.dataset.navigationDirection;
+      return;
+    }
+    event.preventDefault();
+    transition.current?.skipTransition();
+    document.documentElement.dataset.navigationDirection = index > previous ? "forward" : "backward";
+    const next = document.startViewTransition(() => {
+      if (transition.current === next) flushSync(() => navigate(href));
+    });
+    transition.current = next;
+    // Skipping an in-flight transition rejects ready, even when navigation succeeds.
+    void next.ready.catch(() => undefined);
+    void next.finished.catch(() => undefined).finally(() => {
+      if (transition.current !== next) return;
+      transition.current = null;
+      delete document.documentElement.dataset.navigationDirection;
+    });
+  }
+
   return (
     <header className="relative z-30 shrink-0 bg-chrome text-white shadow-[0_10px_30px_-18px_rgb(3_11_34/0.9)]">
       <div className="flex h-15 items-center gap-2 px-3 sm:gap-3 sm:px-6">
-        {onOpenForms && (
-          <Button variant="glass" size="icon-sm" className="border-transparent bg-transparent lg:hidden" onClick={onOpenForms} aria-label="Open forms list">
-            <Menu />
-          </Button>
-        )}
+        <div className="size-8 shrink-0 lg:hidden">
+          {onOpenForms && (
+            <Button variant="glass" size="icon-sm" className="border-transparent bg-transparent" onClick={onOpenForms} aria-label="Open forms list">
+              <Menu />
+            </Button>
+          )}
+        </div>
         <Link href="/" className="rounded-lg">
           <Brand tone="light" compact />
         </Link>
-        <nav aria-label="Main" className="ml-auto flex items-center gap-1 sm:ml-6">
-          {items.map(({ href, label, icon: Icon, active, badge }) => (
+        <nav ref={navRef} aria-label="Main" className="relative ml-auto flex items-center gap-1 sm:ml-6">
+          {indicator && (
+            <span aria-hidden="true" className="main-nav-indicator pointer-events-none absolute top-0 left-0 h-9 rounded-lg bg-white/15 shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]" style={{ width: indicator.width, transform: `translateX(${indicator.left}px)` }} />
+          )}
+          {items.map(({ href, label, icon: Icon, active, badge }, index) => (
             <Link
               key={label}
               href={href}
+              onClick={(event) => changeMenu(event, href, index)}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "relative inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold text-brand-100/80 transition-colors hover:bg-white/10 hover:text-white sm:px-3",
-                active && "bg-white/15 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]",
+                active && "text-white hover:bg-transparent",
               )}
             >
               <Icon className="size-4" />

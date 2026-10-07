@@ -95,7 +95,7 @@ export function DashboardLayout({ user, onSignOut }: { user: UserInfo; onSignOut
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-canvas">
       <AppHeader user={user} formsHref={formsHref} onOpenForms={onFormsPage ? () => setSheetOpen(true) : undefined} onSignOut={onSignOut} />
-      <div className="flex min-h-0 flex-1">
+      <div key={onFormsPage ? "forms" : location} className="dashboard-content flex min-h-0 flex-1">
         <Switch>
           <Route path="/activity"><ActivityPage /></Route>
           <Route path="/settings"><SettingsPage /></Route>

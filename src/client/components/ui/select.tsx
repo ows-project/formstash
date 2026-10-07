@@ -26,7 +26,7 @@ export function SelectContent({ className, children, ...props }: ComponentProps<
         sideOffset={6}
         className={cn(
           "z-50 max-h-(--radix-select-content-available-height) min-w-(--radix-select-trigger-width) overflow-hidden rounded-xl border border-line bg-surface p-1 text-ink shadow-pop",
-          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+          "motion-layer origin-(--radix-select-content-transform-origin) data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
           className,
         )}
         {...props}

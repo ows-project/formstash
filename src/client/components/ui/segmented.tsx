@@ -23,7 +23,7 @@ export function Segmented<T extends string>({ value, onValueChange, options, lab
         <ToggleGroup.Item
           key={option.value}
           value={option.value}
-          className="inline-flex h-full flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold whitespace-nowrap text-muted transition-colors hover:text-ink data-[state=on]:bg-surface data-[state=on]:text-accent-ink data-[state=on]:shadow-[0_1px_3px_rgb(11_21_48/0.12)]"
+          className="inline-flex h-full flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold whitespace-nowrap text-muted transition-[background-color,color,box-shadow] duration-200 ease-[var(--motion-ease)] hover:text-ink data-[state=on]:bg-surface data-[state=on]:text-accent-ink data-[state=on]:shadow-[0_1px_3px_rgb(11_21_48/0.12)]"
         >
           {option.label}
         </ToggleGroup.Item>

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCheck, Inbox, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import type { FormSummary, Submission, SubmissionStatus } from "../../../shared/types";
 import { api, ApiError } from "../../api";
-import { cn } from "../../lib/cn";
 import { errorMessage } from "../../lib/format";
 import { curlSnippet, endpointUrl } from "../../lib/snippets";
 import { CodeBlock } from "../../components/CodeBlock";
@@ -27,6 +26,22 @@ const STATUS_TOAST: Record<SubmissionStatus, string> = {
   unread: "Marked as unread",
   spam: "Moved to spam",
 };
+
+function SubmissionPanel({ open, children }: { open: boolean; children: ReactNode }) {
+  // Keep the last detail visible during the closing slide, without delaying navigation.
+  const [content, setContent] = useState(children);
+  useEffect(() => {
+    if (open) setContent(children);
+  }, [open, children]);
+
+  return (
+    <aside className="submission-panel" data-open={open} aria-label="Submission" aria-hidden={!open} inert={!open}>
+      <div className="submission-panel-content flex h-full min-h-0 flex-col border-line bg-surface xl:border-l">
+        {open ? children : content}
+      </div>
+    </aside>
+  );
+}
 
 function useDebounced<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -147,8 +162,8 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
   const filtered = filter !== "all" || search !== "";
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
-      <section className={cn("flex min-h-0 min-w-0 flex-1 flex-col", submissionId && "max-xl:hidden")}>
+    <div className="inbox-layout motion-enter relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <section className="inbox-list flex min-h-0 min-w-0 flex-1 flex-col" data-detail-open={!!submissionId}>
         <FormHeader form={form} onIntegrate={() => setIntegrationOpen(true)} onSettings={() => setSettingsOpen(true)} />
 
         <div className="flex flex-col gap-3 px-4 pb-3 sm:flex-row sm:items-center sm:px-6">
@@ -228,8 +243,8 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
         </div>
       </section>
 
-      {submissionId && detailState && (
-        <aside className="flex min-h-0 w-full flex-col border-line bg-surface xl:w-[min(460px,38%)] xl:shrink-0 xl:border-l xl:shadow-[-18px_0_40px_-30px_rgb(11_21_48/0.35)]" aria-label="Submission">
+      <SubmissionPanel open={!!submissionId}>
+        {submissionId && detailState && (
           <SubmissionDetail
             key={submissionId}
             submission={selected}
@@ -241,8 +256,8 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
             onStatus={(submission, status) => void updateStatus(submission, status)}
             onDelete={deleteSubmission}
           />
-        </aside>
-      )}
+        )}
+      </SubmissionPanel>
 
       <IntegrationDialog form={form} open={integrationOpen} onOpenChange={setIntegrationOpen} onOpenSettings={() => { setIntegrationOpen(false); setSettingsOpen(true); }} />
       <FormSettingsDialog form={form} open={settingsOpen} onOpenChange={setSettingsOpen} />
