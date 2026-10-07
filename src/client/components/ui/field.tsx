@@ -22,7 +22,7 @@ export function Field({ label, hint, error, optional, className, children }: Fie
       })
     : children;
   return (
-    <div className={cn("grid gap-1.5", className)}>
+    <div className={cn("grid content-start gap-1.5", className)}>
       <label htmlFor={children.props.id ?? id} className="m-0 flex items-baseline justify-between gap-3 text-[13px] font-semibold text-ink-2">
         {label}
         {optional && <span className="text-xs font-normal text-subtle">Optional</span>}
