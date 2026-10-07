@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOrigin, normalizeSourceUrl, parseSubmission, slugify, SubmissionError } from "./submissions";
+import { isHoneypotTripped, normalizeOrigin, normalizeSourceUrl, parseSubmission, slugify, SubmissionError } from "./submissions";
 
 describe("parseSubmission", () => {
   it("keeps scalar JSON fields without inventing request metadata", async () => {
@@ -52,5 +52,21 @@ describe("form address helpers", () => {
   it("keeps safe source paths and rejects executable URLs", () => {
     expect(normalizeSourceUrl("https://example.com/waitlist?from=home")).toBe("https://example.com/waitlist?from=home");
     expect(normalizeSourceUrl("javascript:alert(1)")).toBeNull();
+  });
+});
+
+describe("isHoneypotTripped", () => {
+  it("treats any filled honeypot value as a bot, including JSON booleans and numbers", () => {
+    expect(isHoneypotTripped("x")).toBe(true);
+    expect(isHoneypotTripped(true)).toBe(true);
+    expect(isHoneypotTripped(1)).toBe(true);
+    expect(isHoneypotTripped(0)).toBe(true);
+  });
+
+  it("ignores an absent or empty honeypot", () => {
+    expect(isHoneypotTripped("")).toBe(false);
+    expect(isHoneypotTripped(false)).toBe(false);
+    expect(isHoneypotTripped(null)).toBe(false);
+    expect(isHoneypotTripped(undefined)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { SubmissionPayload } from "../shared/types";
+import type { PayloadValue, SubmissionPayload } from "../shared/types";
 
 export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_FIELDS = 50;
@@ -32,6 +32,13 @@ function validatePayload(value: unknown): SubmissionPayload {
     payload[key] = entry;
   }
   return payload;
+}
+
+// A filled honeypot marks a bot. JSON bodies can send non-string values, so any
+// value other than an empty string, false, null, or absence counts as filled.
+export function isHoneypotTripped(value: PayloadValue | undefined): boolean {
+  if (typeof value === "string") return value !== "";
+  return value !== undefined && value !== null && value !== false;
 }
 
 export async function parseSubmission(request: Request): Promise<SubmissionPayload> {
