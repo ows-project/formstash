@@ -26,15 +26,16 @@ import {
 import type { FormSummary, Submission, SubmissionStatus } from "../shared/types";
 import { api, ApiError } from "./api";
 import { ActivityPage, FormSettingsModal, SettingsPage } from "./ManagementPages";
+import type { UserInfo } from "./auth";
+import { Brand } from "./components/Brand";
+import { LoadingScreen } from "./components/LoadingScreen";
+import { LoginScreen } from "./screens/auth/LoginScreen";
+import { ResetPasswordScreen } from "./screens/auth/ResetPasswordScreen";
+import { SetupScreen } from "./screens/auth/SetupScreen";
 
 type Screen = "loading" | "setup" | "login" | "reset" | "dashboard";
 type Filter = "all" | SubmissionStatus;
 type DashboardPage = "forms" | "activity" | "settings";
-
-interface UserInfo {
-  id: string;
-  email: string;
-}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong";
@@ -69,205 +70,6 @@ function sourceLabel(submission: Submission): string {
   } catch {
     return submission.sourceUrl;
   }
-}
-
-function Brand() {
-  return (
-    <div className="brand">
-      <span className="brand-mark"><img src="/formstash-icon.svg" alt="" /></span>
-      <strong>Formstash</strong>
-    </div>
-  );
-}
-
-function LoadingScreen() {
-  return (
-    <main className="center-screen">
-      <div className="loading-mark"><img src="/formstash-icon.svg" alt="" /></div>
-      <p>Opening Formstash…</p>
-    </main>
-  );
-}
-
-function SetupScreen({ onComplete }: { onComplete: (user: UserInfo) => void }) {
-  const [step, setStep] = useState(1);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [formName, setFormName] = useState("Waiting list");
-  const [description, setDescription] = useState("Collect early access signups.");
-  const [allowedOrigin, setAllowedOrigin] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  function continueSetup(event: FormEvent) {
-    event.preventDefault();
-    if (!email.includes("@")) return setError("Enter a valid email address.");
-    if (password.length < 12) return setError("Use at least 12 characters for your password.");
-    setError("");
-    setStep(2);
-  }
-
-  async function finishSetup(event: FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
-    try {
-      const result = await api<{ user: UserInfo }>("/api/setup", {
-        method: "POST",
-        body: JSON.stringify({ email, password, formName, description, allowedOrigin }),
-      });
-      onComplete(result.user);
-    } catch (caught) {
-      setError(message(caught));
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="auth-layout">
-      <section className="auth-aside">
-        <Brand />
-        <div className="auth-copy">
-          <span className="eyebrow"><Sparkles size={14} /> First-run setup</span>
-          <h1>Your form endpoint,<br />ready in minutes.</h1>
-          <p>Collect submissions without operating another server. Your data stays in your Cloudflare account.</p>
-        </div>
-        <div className="setup-benefits">
-          <span><ShieldCheck size={17} /> Single-tenant by default</span>
-          <span><Code2 size={17} /> Built for headless forms</span>
-          <span><Braces size={17} /> Flexible submission fields</span>
-        </div>
-      </section>
-      <section className="auth-main">
-        <div className="setup-card">
-          <div className="step-indicator" aria-label={`Step ${step} of 2`}>
-            <span className="active" />
-            <span className={step === 2 ? "active" : ""} />
-          </div>
-          {step === 1 ? (
-            <form onSubmit={continueSetup}>
-              <div className="form-heading">
-                <span className="step-label">Step 1 of 2</span>
-                <h2>Create your owner account</h2>
-                <p>This account controls this Formstash instance.</p>
-              </div>
-              <label>Email address<input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
-              <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 12 characters" minLength={12} required /></label>
-              {error && <p className="form-error">{error}</p>}
-              <button className="primary-button wide" type="submit">Continue <span>→</span></button>
-            </form>
-          ) : (
-            <form onSubmit={finishSetup}>
-              <button className="back-button" type="button" onClick={() => setStep(1)}><ArrowLeft size={15} /> Back</button>
-              <div className="form-heading">
-                <span className="step-label">Step 2 of 2</span>
-                <h2>Create your first form</h2>
-                <p>You can change these details later.</p>
-              </div>
-              <label>Form name<input autoFocus value={formName} onChange={(event) => setFormName(event.target.value)} maxLength={80} required /></label>
-              <label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={240} /></label>
-              <label>Allowed website <span className="optional">Optional</span><input type="url" value={allowedOrigin} onChange={(event) => setAllowedOrigin(event.target.value)} placeholder="https://example.com" /><small>Browser submissions will only be accepted from this origin.</small></label>
-              {error && <p className="form-error">{error}</p>}
-              <button className="primary-button wide" type="submit" disabled={submitting}>{submitting ? "Creating instance…" : "Create Formstash instance"}</button>
-            </form>
-          )}
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function LoginScreen({ onLogin }: { onLogin: (user: UserInfo) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [forgot, setForgot] = useState(false);
-  const [requested, setRequested] = useState(false);
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
-    try {
-      const result = await api<{ user: UserInfo }>("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
-      onLogin(result.user);
-    } catch (caught) {
-      setError(message(caught));
-      setSubmitting(false);
-    }
-  }
-
-  async function requestReset(event: FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
-    try {
-      await api("/api/auth/password/request", { method: "POST", body: JSON.stringify({ email }) });
-      setRequested(true);
-    } catch (caught) {
-      setError(message(caught));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="login-screen">
-      <div className="login-brand"><Brand /></div>
-      {forgot ? (
-        <form className="login-card" onSubmit={requestReset}>
-          <button className="back-button" type="button" onClick={() => { setForgot(false); setRequested(false); setError(""); }}><ArrowLeft size={15} /> Back to sign in</button>
-          <div className="form-heading"><h1>Reset your password</h1><p>{requested ? "If that account exists, a reset link has been queued." : "We’ll send a one-hour reset link through your configured SMTP server."}</p></div>
-          {!requested && <><label>Email address<input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button wide" disabled={submitting}>{submitting ? "Requesting…" : "Send reset link"}</button></>}
-          {requested && <div className="success-banner"><CheckCircle2 size={18} />Request received</div>}
-        </form>
-      ) : (
-        <form className="login-card" onSubmit={submit}>
-          <div className="form-heading"><h1>Welcome back</h1><p>Sign in to manage your forms and submissions.</p></div>
-          <label>Email address<input autoFocus type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-          <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-          <button className="text-button forgot-button" type="button" onClick={() => setForgot(true)}>Forgot password?</button>
-          {error && <p className="form-error">{error}</p>}
-          <button className="primary-button wide" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"}</button>
-        </form>
-      )}
-    </main>
-  );
-}
-
-function ResetPasswordScreen({ token, onComplete }: { token: string; onComplete: () => void }) {
-  const [password, setPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (password !== confirmation) return setError("Passwords do not match");
-    setSubmitting(true);
-    setError("");
-    try {
-      await api("/api/auth/password/reset", { method: "POST", body: JSON.stringify({ token, password }) });
-      onComplete();
-    } catch (caught) {
-      setError(message(caught));
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="login-screen"><div className="login-brand"><Brand /></div><form className="login-card" onSubmit={submit}>
-      <div className="form-heading"><h1>Choose a new password</h1><p>Use at least 12 characters.</p></div>
-      <label>New password<input autoFocus type="password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-      <label>Confirm password<input type="password" minLength={12} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>
-      {error && <p className="form-error">{error}</p>}
-      <button className="primary-button wide" disabled={submitting}>{submitting ? "Resetting…" : "Reset password"}</button>
-    </form></main>
-  );
 }
 
 function DetailPanel({ submission, onClose, onStatus, onDelete }: {
