@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Collapsible } from "radix-ui";
-import { ArrowLeft, Braces, ChevronDown, FileQuestion, Mail, MailOpen, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowLeft, Braces, ChevronDown, CloudOff, FileQuestion, Mail, MailOpen, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Submission, SubmissionStatus } from "../../../shared/types";
-import { displayValue, formatDateTime, formatTime, humanizeField, submissionTitle } from "../../lib/format";
+import { displayValue, formatDateTime, formatTime, humanizeField, mailtoHref, submissionTitle } from "../../lib/format";
 import { CodeBlock } from "../../components/CodeBlock";
 import { SubmitterAvatar } from "../../components/SubmitterAvatar";
 import { Badge } from "../../components/ui/badge";
@@ -19,7 +19,9 @@ const STATUS_BADGE: Record<SubmissionStatus, { tone: "brand" | "neutral" | "dang
 
 interface SubmissionDetailProps {
   submission: Submission | null;
-  state: "ready" | "loading" | "missing";
+  state: "ready" | "loading" | "missing" | "error";
+  error?: string;
+  onRetry: () => void;
   fieldOrder: string[];
   onClose: () => void;
   onStatus: (submission: Submission, status: SubmissionStatus) => void;
@@ -46,7 +48,7 @@ function DetailBar({ onClose, children }: { onClose: () => void; children?: Reac
   );
 }
 
-export function SubmissionDetail({ submission, state, fieldOrder, onClose, onStatus, onDelete }: SubmissionDetailProps) {
+export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder, onClose, onStatus, onDelete }: SubmissionDetailProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (state === "loading" || !submission) {
@@ -58,6 +60,10 @@ export function SubmissionDetail({ submission, state, fieldOrder, onClose, onSta
             <div className="flex items-center gap-4"><Skeleton className="size-13 rounded-full" /><div className="grid flex-1 gap-2"><Skeleton className="h-5 w-48" /><Skeleton className="h-3.5 w-36" /></div></div>
             {[0, 1, 2, 3].map((key) => <Skeleton key={key} className="h-10" />)}
           </div>
+        ) : state === "error" ? (
+          <EmptyState icon={<CloudOff />} title="Couldn't load this submission" action={<Button onClick={onRetry}>Try again</Button>}>
+            {error}
+          </EmptyState>
         ) : (
           <EmptyState icon={<FileQuestion />} title="Submission not found" action={<Button variant="secondary" onClick={onClose}>Back to inbox</Button>}>
             It may have been deleted, or the link points to a different form.
@@ -70,6 +76,7 @@ export function SubmissionDetail({ submission, state, fieldOrder, onClose, onSta
   const badge = STATUS_BADGE[submission.status];
   const title = submissionTitle(submission);
   const email = displayValue(submission.payload.email);
+  const emailHref = mailtoHref(submission.payload.email);
   const raw = JSON.stringify(submission.payload, null, 2);
 
   return (
@@ -83,9 +90,9 @@ export function SubmissionDetail({ submission, state, fieldOrder, onClose, onSta
           <SubmitterAvatar submission={submission} size="lg" />
           <div className="min-w-0">
             <h2 className="m-0 truncate text-xl font-extrabold tracking-[-0.025em] text-ink">{title}</h2>
-            {email !== "—" && email !== title && (
-              <a href={`mailto:${email}`} className="block truncate text-sm font-medium text-accent-ink hover:underline">{email}</a>
-            )}
+            {email !== "—" && email !== title && (emailHref
+              ? <a href={emailHref} className="block truncate text-sm font-medium text-accent-ink hover:underline">{email}</a>
+              : <p className="m-0 truncate text-sm text-ink-2">{email}</p>)}
             <time dateTime={submission.receivedAt} title={formatDateTime(submission.receivedAt)} className="mt-0.5 block text-[13px] text-muted">
               Received {formatTime(submission.receivedAt)}
             </time>

@@ -83,30 +83,28 @@ export function htmlSnippet({ endpoint, form, turnstileSiteKey }: SnippetInput):
   return lines.join("\n");
 }
 
-function objectKey(key: string): string {
-  return /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
-}
-
 export function fetchSnippet({ endpoint, form }: SnippetInput): string {
-  const fields = Object.entries(samplePayload(form)).map(([key, value]) => `    ${objectKey(key)}: ${JSON.stringify(value)},`);
-  const body = [
-    ...fields,
-    ...(form.turnstileEnabled ? ["    _turnstile: turnstileToken, // from the Turnstile widget callback"] : []),
-    "    _source: location.href,",
-  ];
   return [
-    `const response = await fetch(${JSON.stringify(endpoint)}, {`,
-    `  method: "POST",`,
-    `  headers: { "Content-Type": "application/json" },`,
-    `  body: JSON.stringify({`,
-    ...body,
-    `  }),`,
-    `});`,
+    `const form = document.querySelector("form");`,
     ``,
-    `if (!response.ok) {`,
-    `  const { error } = await response.json();`,
-    `  throw new Error(error);`,
-    `}`,
+    `form.addEventListener("submit", async (event) => {`,
+    `  event.preventDefault();`,
+    `  const response = await fetch(${JSON.stringify(endpoint)}, {`,
+    `    method: "POST",`,
+    `    headers: { "Content-Type": "application/json" },`,
+    `    body: JSON.stringify({`,
+    ...(form.turnstileEnabled ? [`      // The Turnstile widget adds cf-turnstile-response to the form for you.`] : []),
+    `      ...Object.fromEntries(new FormData(form)),`,
+    `      _source: location.href,`,
+    `    }),`,
+    `  });`,
+    ``,
+    `  if (!response.ok) {`,
+    `    const { error } = await response.json();`,
+    `    throw new Error(error);`,
+    `  }`,
+    `  form.reset();`,
+    `});`,
   ].join("\n");
 }
 

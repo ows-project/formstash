@@ -1,11 +1,12 @@
 import type { ComponentProps } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { cn } from "../../lib/cn";
-import { overlayClass } from "./dialog";
+import { overlayClass, useRestoreFocus } from "./dialog";
 
 export const Sheet = DialogPrimitive.Root;
 
-export function SheetContent({ className, children, title, ...props }: ComponentProps<typeof DialogPrimitive.Content> & { title: string }) {
+export function SheetContent({ className, children, title, onOpenAutoFocus, onCloseAutoFocus, ...props }: ComponentProps<typeof DialogPrimitive.Content> & { title: string }) {
+  const focus = useRestoreFocus({ onOpenAutoFocus, onCloseAutoFocus });
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className={overlayClass} />
@@ -16,6 +17,7 @@ export function SheetContent({ className, children, title, ...props }: Component
           className,
         )}
         {...props}
+        {...focus}
       >
         <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
         <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>

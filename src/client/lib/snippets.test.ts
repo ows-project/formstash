@@ -80,19 +80,20 @@ describe("fetchSnippet", () => {
     expect(code).not.toMatch(/body:\s*new FormData/);
   });
 
-  it("writes identifier keys bare and quotes the rest, like hand-written code", () => {
-    const code = fetchSnippet({ endpoint, form: { ...form, fields: ["email", "referral-code"] } });
-    expect(code).toContain(`    email: "ada@example.com",`);
-    expect(code).toContain(`    "referral-code": "Example",`);
+  it("sends what the visitor typed from the form's submit handler, not sample data", () => {
+    expect(code).toContain(`form.addEventListener("submit"`);
+    expect(code).toContain("event.preventDefault()");
+    expect(code).toContain("...Object.fromEntries(new FormData(form))");
+    expect(code).not.toContain("ada@example.com");
   });
 
   it("records the page the visitor submitted from", () => {
     expect(code).toContain("_source: location.href");
   });
 
-  it("passes the Turnstile token only for protected forms", () => {
-    expect(code).not.toContain("_turnstile");
-    expect(fetchSnippet({ endpoint, form: { ...form, turnstileEnabled: true } })).toContain("_turnstile");
+  it("mentions the Turnstile token only for protected forms", () => {
+    expect(code).not.toContain("cf-turnstile-response");
+    expect(fetchSnippet({ endpoint, form: { ...form, turnstileEnabled: true } })).toContain("cf-turnstile-response");
   });
 });
 

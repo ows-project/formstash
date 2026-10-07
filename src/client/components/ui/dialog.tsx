@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useRef, type ComponentProps, type ReactNode } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 import { cn } from "../../lib/cn";
@@ -6,6 +6,24 @@ import { cn } from "../../lib/cn";
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
+
+// Our dialogs open from state, not Dialog.Trigger, so Radix has no trigger to
+// refocus on close. Remember whatever had focus on open and return to it.
+export function useRestoreFocus({ onOpenAutoFocus, onCloseAutoFocus }: { onOpenAutoFocus?: (event: Event) => void; onCloseAutoFocus?: (event: Event) => void }) {
+  const opener = useRef<HTMLElement | null>(null);
+  return {
+    onOpenAutoFocus(event: Event) {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      onOpenAutoFocus?.(event);
+    },
+    onCloseAutoFocus(event: Event) {
+      onCloseAutoFocus?.(event);
+      if (event.defaultPrevented || !opener.current?.isConnected) return;
+      event.preventDefault();
+      opener.current.focus();
+    },
+  };
+}
 
 export const overlayClass =
   "fixed inset-0 z-50 bg-[#030b22]/55 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0";
@@ -17,7 +35,8 @@ interface DialogContentProps extends ComponentProps<typeof DialogPrimitive.Conte
 
 // Put a <form className="contents"> directly inside so its fields and
 // submit button share the portaled DOM subtree.
-export function DialogContent({ className, children, size = "md", hideClose, ...props }: DialogContentProps) {
+export function DialogContent({ className, children, size = "md", hideClose, onOpenAutoFocus, onCloseAutoFocus, ...props }: DialogContentProps) {
+  const focus = useRestoreFocus({ onOpenAutoFocus, onCloseAutoFocus });
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className={overlayClass} />
@@ -31,6 +50,7 @@ export function DialogContent({ className, children, size = "md", hideClose, ...
           className,
         )}
         {...props}
+        {...focus}
       >
         {children}
         {!hideClose && (

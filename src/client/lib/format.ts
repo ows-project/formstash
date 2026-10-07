@@ -49,6 +49,13 @@ export function sourceLabel(submission: Submission): string {
   }
 }
 
+// Only plain addresses become links, so a submitter can't add ?bcc= or &body= to the owner's reply.
+const PLAIN_EMAIL = /^[^\s@?&#/:%]+@[^\s@?&#/:%]+\.[^\s@?&#/:%]+$/;
+
+export function mailtoHref(value: unknown): string | null {
+  return typeof value === "string" && PLAIN_EMAIL.test(value) ? `mailto:${value}` : null;
+}
+
 export function humanizeField(key: string): string {
   const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);

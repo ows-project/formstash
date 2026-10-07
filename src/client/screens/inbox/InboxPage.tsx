@@ -47,7 +47,7 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
   const [submissions, setSubmissions] = useState<Submission[] | null>(null);
   const [listError, setListError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [fetched, setFetched] = useState<{ id: string; submission: Submission | null } | null>(null);
+  const [fetched, setFetched] = useState<{ id: string; submission: Submission | null; error?: string } | null>(null);
   const [integrationOpen, setIntegrationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const autoRead = useRef(new Set<string>());
@@ -78,14 +78,18 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
       .then((result) => setFetched({ id: submissionId, submission: result.submission }))
       .catch((error) => {
         if (controller.signal.aborted) return;
-        if (!(error instanceof ApiError && error.status === 404)) toast.error(errorMessage(error));
-        setFetched({ id: submissionId, submission: null });
+        const missing = error instanceof ApiError && error.status === 404;
+        setFetched({ id: submissionId, submission: null, error: missing ? undefined : errorMessage(error) });
       });
     return () => controller.abort();
   }, [form.id, submissionId, submissions, listed, fetched?.id]);
 
   const selected = listed ?? (fetched?.id === submissionId ? fetched.submission : null);
-  const detailState = !submissionId ? null : selected ? "ready" : fetched?.id === submissionId ? "missing" : "loading";
+  const detailState = !submissionId ? null
+    : selected ? "ready"
+    : fetched?.id !== submissionId ? "loading"
+    : fetched.error ? "error"
+    : "missing";
 
   const applyStatus = useCallback((id: string, status: SubmissionStatus) => {
     setSubmissions((entries) => entries?.map((entry) => entry.id === id ? { ...entry, status } : entry) ?? null);
@@ -127,8 +131,9 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
       throw error;
     }
     setSubmissions((entries) => entries?.filter((entry) => entry.id !== submission.id) ?? null);
+    setFetched((current) => current?.id === submission.id ? { id: current.id, submission: null } : current);
     adjustCounts(form.id, submission.status, null);
-    navigate(`/forms/${form.id}`);
+    navigate(`/forms/${form.id}`, { replace: true });
     toast.success("Submission deleted");
     void refreshForms();
   }
@@ -229,6 +234,8 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
             key={submissionId}
             submission={selected}
             state={detailState}
+            error={fetched?.id === submissionId ? fetched.error : undefined}
+            onRetry={() => setFetched(null)}
             fieldOrder={form.fields}
             onClose={closeDetail}
             onStatus={(submission, status) => void updateStatus(submission, status)}

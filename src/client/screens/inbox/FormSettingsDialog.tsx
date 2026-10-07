@@ -1,8 +1,9 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { FormSummary } from "../../../shared/types";
+import type { AppSettings, FormSummary } from "../../../shared/types";
 import { api } from "../../api";
 import { errorMessage } from "../../lib/format";
+import { integrationWarnings, type IntegrationSettings } from "../../lib/snippets";
 import { useForms } from "../../components/FormsProvider";
 import { Button } from "../../components/ui/button";
 import { Callout } from "../../components/ui/callout";
@@ -31,6 +32,22 @@ export function FormSettingsDialog({ form, open, onOpenChange }: FormSettingsDia
   const { refreshForms } = useForms();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [turnstileOn, setTurnstileOn] = useState(form.turnstileEnabled);
+  const [appSettings, setAppSettings] = useState<IntegrationSettings | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setTurnstileOn(form.turnstileEnabled);
+    const controller = new AbortController();
+    api<{ settings: AppSettings }>("/api/settings", { signal: controller.signal })
+      .then((result) => setAppSettings(result.settings))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [open, form.turnstileEnabled]);
+
+  const turnstileWarning = turnstileOn
+    ? integrationWarnings({ ...form, turnstileEnabled: true }, appSettings).find((warning) => warning.id === "turnstile-setup")
+    : undefined;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,7 +116,8 @@ export function FormSettingsDialog({ form, open, onOpenChange }: FormSettingsDia
               </Field>
               <div className="grid gap-3">
                 <SwitchRow name="strictFields" defaultChecked={form.strictFields} label="Strict fields" description="Reject submissions that contain keys not listed in Fields." />
-                <SwitchRow name="turnstileEnabled" defaultChecked={form.turnstileEnabled} label="Require Turnstile" description="Every submission must carry a valid Cloudflare Turnstile token. Keys are set in Settings." />
+                <SwitchRow name="turnstileEnabled" defaultChecked={form.turnstileEnabled} onCheckedChange={setTurnstileOn} label="Require Turnstile" description="Every submission must carry a valid Cloudflare Turnstile token. Keys are set in Settings." />
+                {turnstileWarning && <Callout tone="warning" title={turnstileWarning.title}>{turnstileWarning.body}</Callout>}
               </div>
             </Section>
           </DialogBody>

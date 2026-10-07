@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FilePlus2, FileQuestion, X } from "lucide-react";
+import { CloudOff, FilePlus2, FileQuestion, X } from "lucide-react";
 import { Link, Redirect, Route, Switch, useLocation, useRoute } from "wouter";
 import type { UserInfo } from "../auth";
 import { ActivityPage } from "../screens/ActivityPage";
@@ -28,7 +28,7 @@ function InboxSkeleton() {
 }
 
 function FormsArea({ onNewForm }: { onNewForm: () => void }) {
-  const { forms } = useForms();
+  const { forms, loadError, refreshForms } = useForms();
   const [location] = useLocation();
   const [, detail] = useRoute("/forms/:formId/submissions/:submissionId");
   const [, single] = useRoute("/forms/:formId");
@@ -41,7 +41,13 @@ function FormsArea({ onNewForm }: { onNewForm: () => void }) {
   }
 
   let main;
-  if (forms === null) main = <InboxSkeleton />;
+  if (forms === null && loadError) {
+    main = (
+      <EmptyState icon={<CloudOff />} title="Couldn't load your forms" className="self-center" action={<Button onClick={() => void refreshForms()}>Try again</Button>}>
+        {loadError}
+      </EmptyState>
+    );
+  } else if (forms === null) main = <InboxSkeleton />;
   else if (!formId) {
     main = (
       <EmptyState icon={<FilePlus2 />} title="Create your first form" className="self-center" action={<Button onClick={onNewForm}>New form</Button>}>

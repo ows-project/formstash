@@ -135,9 +135,9 @@ export function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_110px_190px]">
                 <Field label="SMTP host"><Input name="smtpHost" defaultValue={settings.smtpHost} placeholder="smtp.example.com" /></Field>
                 <Field label="Port"><Input name="smtpPort" type="number" min={1} max={65535} defaultValue={settings.smtpPort} /></Field>
-                <Field label="Security">
+                <Field label="Security" id="smtp-security">
                   <Select name="smtpSecurity" defaultValue={settings.smtpSecurity}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="smtp-security"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="tls">TLS (port 465)</SelectItem>
                       <SelectItem value="starttls">STARTTLS (port 587)</SelectItem>

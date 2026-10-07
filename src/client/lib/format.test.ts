@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Submission } from "../../shared/types";
 import { avatarGradient } from "./avatar";
-import { displayValue, formatTime, humanizeField, initials, sourceLabel, submissionTitle } from "./format";
+import { displayValue, formatTime, humanizeField, initials, mailtoHref, sourceLabel, submissionTitle } from "./format";
 
 function submission(payload: Submission["payload"], sourceUrl: string | null = null): Submission {
   return { id: "s1", formId: "f1", payload, sourceUrl, status: "unread", receivedAt: "2026-01-01T00:00:00.000Z" };
@@ -65,5 +65,20 @@ describe("avatarGradient", () => {
   it("spreads different submitters across the palette", () => {
     const gradients = new Set(["a@x.io", "b@x.io", "c@x.io", "d@x.io", "e@x.io", "f@x.io", "g@x.io"].map(avatarGradient));
     expect(gradients.size).toBeGreaterThan(2);
+  });
+});
+
+describe("mailtoHref", () => {
+  it("links plain email addresses", () => {
+    expect(mailtoHref("ada@example.com")).toBe("mailto:ada@example.com");
+  });
+
+  it("refuses values that would smuggle mailto parameters or other schemes", () => {
+    expect(mailtoHref("me@x.com?bcc=attacker@evil.com")).toBeNull();
+    expect(mailtoHref("me@x.com&body=hi")).toBeNull();
+    expect(mailtoHref("ada @example.com")).toBeNull();
+    expect(mailtoHref("javascript:alert(1)//@x.com")).toBeNull();
+    expect(mailtoHref(true)).toBeNull();
+    expect(mailtoHref(undefined)).toBeNull();
   });
 });

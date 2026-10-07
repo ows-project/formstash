@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { AlertDialog } from "radix-ui";
 import { cn } from "../../lib/cn";
 import { Button, buttonVariants } from "./button";
-import { overlayClass } from "./dialog";
+import { overlayClass, useRestoreFocus } from "./dialog";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -15,6 +15,7 @@ interface ConfirmDialogProps {
 
 export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, onConfirm }: ConfirmDialogProps) {
   const [busy, setBusy] = useState(false);
+  const focus = useRestoreFocus({});
 
   async function confirm() {
     setBusy(true);
@@ -33,6 +34,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
       <AlertDialog.Portal>
         <AlertDialog.Overlay className={overlayClass} />
         <AlertDialog.Content
+          {...focus}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-surface p-6 text-ink shadow-pop",
             "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
