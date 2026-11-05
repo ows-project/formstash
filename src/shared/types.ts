@@ -32,6 +32,10 @@ export interface FormSummary {
   schema: SchemaField[];
   turnstileEnabled: boolean;
   rateLimitPerMinute: number;
+  recipientField: string;
+  confirmationEnabled: boolean;
+  confirmationTemplate: string;
+  followUpTemplate: string;
   totalCount: number;
   unreadCount: number;
   spamCount: number;
@@ -44,10 +48,13 @@ export interface Submission {
   sourceUrl: string | null;
   status: SubmissionStatus;
   receivedAt: string;
+  followUpAt: string | null;
 }
 
 export interface AppSettings {
   smtpEnabled: boolean;
+  emailProvider: "smtp" | "resend";
+  resendConfigured: boolean;
   smtpHost: string;
   smtpPort: number;
   smtpSecurity: "tls" | "starttls";
@@ -65,7 +72,7 @@ export interface Delivery {
   id: string;
   formName: string | null;
   recipient: string;
-  kind: "submission" | "password_reset" | "test";
+  kind: "submission" | "password_reset" | "test" | "confirmation" | "follow_up";
   status: "queued" | "retrying" | "delivered" | "failed";
   attempts: number;
   lastError: string | null;

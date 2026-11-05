@@ -1,6 +1,7 @@
 import type { SubmissionPayload } from "../shared/types";
 import type { Env } from "./auth";
 import { decryptSecret } from "./secrets";
+import { sendResend, templateVariables, type ResendTemplate } from "./resend";
 import { sendSmtp, type EmailContent, type SmtpConfig } from "./smtp";
 
 export interface EmailJob {
@@ -10,6 +11,7 @@ export interface EmailJob {
 
 export interface SettingsRow {
   smtp_enabled: number;
+  email_provider: "smtp" | "resend";
   smtp_host: string;
   smtp_port: number;
   smtp_security: "tls" | "starttls";
@@ -22,11 +24,16 @@ export interface SettingsRow {
   turnstile_secret_encrypted: string | null;
 }
 
+export type DeliveryKind = "submission" | "password_reset" | "test" | "confirmation" | "follow_up";
+
 interface DeliveryRow {
   id: string;
   recipient: string;
-  kind: "submission" | "password_reset" | "test";
+  kind: DeliveryKind;
+  variables_json: string | null;
   form_name: string | null;
+  confirmation_template: string | null;
+  follow_up_template: string | null;
   payload_json: string | null;
   source_url: string | null;
   received_at: string | null;
@@ -42,9 +49,15 @@ export async function loadSettings(database: D1Database): Promise<SettingsRow | 
   return database.prepare("SELECT * FROM instance_settings WHERE id = 1").first<SettingsRow>();
 }
 
-async function smtpConfig(env: Env): Promise<SmtpConfig> {
-  const settings = await loadSettings(env.DB);
-  if (!settings?.smtp_enabled) throw new Error("SMTP is not enabled");
+// Email is ready when it is turned on and the chosen provider has its credential.
+export function emailReady(settings: SettingsRow | null, env: Env): settings is SettingsRow {
+  if (!settings?.smtp_enabled) return false;
+  return settings.email_provider === "resend"
+    ? Boolean(env.RESEND_API_KEY)
+    : Boolean(settings.smtp_password_encrypted && env.APP_SECRET);
+}
+
+async function smtpConfig(env: Env, settings: SettingsRow): Promise<SmtpConfig> {
   if (!env.APP_SECRET || !settings.smtp_password_encrypted) throw new Error("SMTP credentials are not configured");
   return {
     host: settings.smtp_host,
@@ -55,6 +68,11 @@ async function smtpConfig(env: Env): Promise<SmtpConfig> {
     fromName: settings.smtp_from_name,
     fromEmail: settings.smtp_from_email,
   };
+}
+
+function sender(settings: SettingsRow): string {
+  const name = settings.smtp_from_name.replace(/[\r\n<>"]+/g, " ").trim();
+  return name ? `${name} <${settings.smtp_from_email}>` : settings.smtp_from_email;
 }
 
 function submissionEmail(row: DeliveryRow): EmailContent {
@@ -84,9 +102,9 @@ function resetEmail(row: DeliveryRow, resetUrl: string): EmailContent {
 function testEmail(row: DeliveryRow): EmailContent {
   return {
     to: row.recipient,
-    subject: "Formstash SMTP test",
-    text: "Your Formstash SMTP settings are working.",
-    html: "<div style=\"font-family:system-ui,sans-serif\"><h2>SMTP is working</h2><p>Your Formstash email settings delivered this message successfully.</p></div>",
+    subject: "Formstash email test",
+    text: "Your Formstash email settings are working.",
+    html: "<div style=\"font-family:system-ui,sans-serif\"><h2>Email is working</h2><p>Your Formstash email settings delivered this message successfully.</p></div>",
   };
 }
 
@@ -94,7 +112,7 @@ async function createDelivery(env: Env, input: {
   formId?: string;
   submissionId?: string;
   recipient: string;
-  kind: DeliveryRow["kind"];
+  kind: DeliveryKind;
   resetUrl?: string;
 }): Promise<string> {
   const id = crypto.randomUUID();
@@ -116,6 +134,37 @@ export async function queueSubmissionEmail(env: Env, formId: string, submissionI
   return createDelivery(env, { formId, submissionId, recipient, kind: "submission" });
 }
 
+export async function queueConfirmationEmail(env: Env, formId: string, submissionId: string, recipient: string): Promise<string> {
+  return createDelivery(env, { formId, submissionId, recipient, kind: "confirmation" });
+}
+
+// Queues one follow-up per recipient; owner-entered variables are stored with each delivery.
+export async function queueFollowUpEmails(
+  env: Env,
+  formId: string,
+  recipients: { submissionId: string; recipient: string }[],
+  variables: Record<string, string>,
+): Promise<number> {
+  const now = new Date().toISOString();
+  const variablesJson = JSON.stringify(variables);
+  for (let start = 0; start < recipients.length; start += 100) {
+    const chunk = recipients.slice(start, start + 100).map((entry) => ({ ...entry, id: crypto.randomUUID() }));
+    await env.DB.batch(chunk.map((entry) => env.DB.prepare(
+      `INSERT INTO email_deliveries (id, form_id, submission_id, recipient, kind, variables_json, created_at)
+       VALUES (?, ?, ?, ?, 'follow_up', ?, ?)`,
+    ).bind(entry.id, formId, entry.submissionId, entry.recipient, variablesJson, now)));
+    try {
+      await env.EMAIL_QUEUE.sendBatch(chunk.map((entry) => ({ body: { deliveryId: entry.id } })));
+    } catch (error) {
+      await env.DB.batch(chunk.map((entry) => env.DB.prepare(
+        "UPDATE email_deliveries SET status = 'failed', last_error = ? WHERE id = ?",
+      ).bind(error instanceof Error ? error.message.slice(0, 500) : "Queue unavailable", entry.id)));
+      throw error;
+    }
+  }
+  return recipients.length;
+}
+
 export async function queuePasswordResetEmail(env: Env, recipient: string, resetUrl: string): Promise<string> {
   return createDelivery(env, { recipient, kind: "password_reset", resetUrl });
 }
@@ -126,8 +175,9 @@ export async function queueTestEmail(env: Env, recipient: string): Promise<strin
 
 async function deliver(env: Env, job: EmailJob): Promise<void> {
   const row = await env.DB.prepare(
-    `SELECT email_deliveries.id, email_deliveries.recipient, email_deliveries.kind,
-            forms.name AS form_name, submissions.payload_json, submissions.source_url, submissions.received_at
+    `SELECT email_deliveries.id, email_deliveries.recipient, email_deliveries.kind, email_deliveries.variables_json,
+            forms.name AS form_name, forms.confirmation_template, forms.follow_up_template,
+            submissions.payload_json, submissions.source_url, submissions.received_at
      FROM email_deliveries
      LEFT JOIN forms ON forms.id = email_deliveries.form_id
      LEFT JOIN submissions ON submissions.id = email_deliveries.submission_id
@@ -135,12 +185,34 @@ async function deliver(env: Env, job: EmailJob): Promise<void> {
   ).bind(job.deliveryId).first<DeliveryRow>();
   if (!row) return;
 
-  const content = row.kind === "submission"
-    ? submissionEmail(row)
-    : row.kind === "password_reset"
-      ? resetEmail(row, job.resetUrl ?? "")
-      : testEmail(row);
-  await sendSmtp(await smtpConfig(env), content);
+  const settings = await loadSettings(env.DB);
+  if (!emailReady(settings, env)) throw new Error("Email delivery is not enabled or its credentials are missing");
+  if (row.kind === "confirmation" || row.kind === "follow_up") {
+    if (settings.email_provider !== "resend") throw new Error("Template emails require Resend as the email provider");
+    const templateId = row.kind === "confirmation" ? row.confirmation_template : row.follow_up_template;
+    if (!templateId) throw new Error("The form has no Resend template for this email");
+    if (!row.payload_json) throw new Error("The submission was deleted");
+    const template: ResendTemplate = {
+      id: templateId,
+      variables: templateVariables(
+        JSON.parse(row.payload_json) as SubmissionPayload,
+        { formName: row.form_name, submittedAt: row.received_at, sourceUrl: row.source_url },
+        JSON.parse(row.variables_json ?? "{}") as Record<string, string>,
+      ),
+    };
+    await sendResend(env.RESEND_API_KEY!, sender(settings), { to: row.recipient, idempotencyKey: row.id, template });
+  } else {
+    const content = row.kind === "submission"
+      ? submissionEmail(row)
+      : row.kind === "password_reset"
+        ? resetEmail(row, job.resetUrl ?? "")
+        : testEmail(row);
+    if (settings.email_provider === "resend") {
+      await sendResend(env.RESEND_API_KEY!, sender(settings), { to: row.recipient, idempotencyKey: row.id, content });
+    } else {
+      await sendSmtp(await smtpConfig(env, settings), content);
+    }
+  }
   await env.DB.prepare(
     "UPDATE email_deliveries SET status = 'delivered', attempts = attempts + 1, last_error = NULL, delivered_at = ? WHERE id = ?",
   ).bind(new Date().toISOString(), row.id).run();

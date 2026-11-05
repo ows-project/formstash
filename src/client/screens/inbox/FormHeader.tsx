@@ -1,4 +1,4 @@
-import { Code2, Copy, Download, Settings } from "lucide-react";
+import { Code2, Copy, Download, MailPlus, Settings } from "lucide-react";
 import { toast } from "sonner";
 import type { FormSummary } from "../../../shared/types";
 import { cn } from "../../lib/cn";
@@ -10,6 +10,7 @@ interface FormHeaderProps {
   form: FormSummary;
   onIntegrate: () => void;
   onSettings: () => void;
+  onFollowUp: () => void;
 }
 
 export function EndpointChip({ slug, className }: { slug: string; className?: string }) {
@@ -43,7 +44,7 @@ export function EndpointChip({ slug, className }: { slug: string; className?: st
   );
 }
 
-export function FormHeader({ form, onIntegrate, onSettings }: FormHeaderProps) {
+export function FormHeader({ form, onIntegrate, onSettings, onFollowUp }: FormHeaderProps) {
   return (
     <header className="grid gap-4 px-4 pt-5 pb-4 sm:px-6 sm:pt-7">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -58,6 +59,11 @@ export function FormHeader({ form, onIntegrate, onSettings }: FormHeaderProps) {
           <Button onClick={onIntegrate}>
             <Code2 /> Integrate
           </Button>
+          {form.followUpTemplate && (
+            <Button variant="secondary" onClick={onFollowUp} aria-label="Send follow-up">
+              <MailPlus /> <span className="max-md:hidden">Follow-up</span>
+            </Button>
+          )}
           <Button variant="secondary" asChild>
             <a href={`/api/forms/${form.id}/export.csv`} download aria-label="Export CSV">
               <Download /> <span className="max-md:hidden">Export</span>

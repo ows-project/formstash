@@ -10,6 +10,8 @@ export interface Env {
   ASSETS: Fetcher;
   EMAIL_QUEUE: Queue<import("./delivery").EmailJob>;
   APP_SECRET?: string;
+  RESEND_API_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
 }
 
 export interface User {

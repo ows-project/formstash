@@ -12,6 +12,7 @@ import { Callout } from "../components/ui/callout";
 import { Field } from "../components/ui/field";
 import { Input, PasswordInput } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Segmented } from "../components/ui/segmented";
 import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 
@@ -48,10 +49,12 @@ export function SettingsPage() {
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [provider, setProvider] = useState<AppSettings["emailProvider"]>("smtp");
 
   const load = useCallback(async () => {
     const result = await api<{ settings: AppSettings }>("/api/settings");
     setSettings(result.settings);
+    setProvider(result.settings.emailProvider);
   }, []);
 
   useEffect(() => {
@@ -68,6 +71,7 @@ export function SettingsPage() {
         method: "PATCH",
         body: JSON.stringify({
           smtpEnabled: data.get("smtpEnabled") === "on",
+          emailProvider: provider,
           smtpHost: data.get("smtpHost"),
           smtpPort: Number(data.get("smtpPort")),
           smtpSecurity: data.get("smtpSecurity"),
@@ -129,10 +133,29 @@ export function SettingsPage() {
             <SettingsCard
               icon={Mail}
               title="Email delivery"
-              description="Send new-submission notifications and password resets through your SMTP server."
+              description="Send notifications, confirmations, follow-ups, and password resets through SMTP or Resend."
               aside={<Switch name="smtpEnabled" defaultChecked={settings.smtpEnabled} aria-label="Send email" className="mt-2" />}
             >
-              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_110px_190px]">
+              <Segmented
+                label="Email provider"
+                value={provider}
+                onValueChange={setProvider}
+                className="justify-self-start"
+                options={[{ value: "smtp", label: "SMTP" }, { value: "resend", label: "Resend" }]}
+              />
+              {/* Hidden, not unmounted, so the other provider's saved values still submit. */}
+              <div className={provider === "resend" ? "grid gap-4" : "hidden"}>
+                {settings.resendConfigured ? (
+                  <Callout tone="info" title="Resend API key is set">
+                    Formstash reads it from the <code className="font-mono text-[12px]">RESEND_API_KEY</code> Worker secret. Confirmation and follow-up emails use templates published in Resend.
+                  </Callout>
+                ) : (
+                  <Callout tone="warning" title="Add your Resend API key">
+                    Run <code className="font-mono text-[12px]">pnpm wrangler secret put RESEND_API_KEY</code>, then reload this page.
+                  </Callout>
+                )}
+              </div>
+              <div className={provider === "smtp" ? "grid gap-4 sm:grid-cols-[minmax(0,1fr)_110px_190px]" : "hidden"}>
                 <Field label="SMTP host"><Input name="smtpHost" defaultValue={settings.smtpHost} placeholder="smtp.example.com" /></Field>
                 <Field label="Port"><Input name="smtpPort" type="number" min={1} max={65535} defaultValue={settings.smtpPort} /></Field>
                 <Field label="Security" id="smtp-security">
@@ -145,13 +168,15 @@ export function SettingsPage() {
                   </Select>
                 </Field>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className={provider === "smtp" ? "grid gap-4 sm:grid-cols-2" : "hidden"}>
                 <Field label="Username"><Input name="smtpUsername" defaultValue={settings.smtpUsername} autoComplete="off" /></Field>
                 <Field label="Password" hint={settings.smtpPasswordConfigured ? "Saved. Leave blank to keep it." : undefined}>
                   <PasswordInput name="smtpPassword" autoComplete="new-password" placeholder={settings.smtpPasswordConfigured ? "••••••••••" : "SMTP password"} />
                 </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="From name"><Input name="smtpFromName" defaultValue={settings.smtpFromName} placeholder="Formstash" /></Field>
-                <Field label="From email"><Input name="smtpFromEmail" type="email" defaultValue={settings.smtpFromEmail} placeholder="forms@example.com" /></Field>
+                <Field label="From email" hint={provider === "resend" ? "Must use a domain verified in Resend." : undefined}><Input name="smtpFromEmail" type="email" defaultValue={settings.smtpFromEmail} placeholder="forms@example.com" /></Field>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-3">
                 <p className="m-0 text-[13px] text-muted">Save your changes first, then send a test to your owner email.</p>

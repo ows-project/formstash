@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Collapsible } from "radix-ui";
-import { ArrowLeft, Braces, ChevronDown, CloudOff, FileQuestion, Mail, MailOpen, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowLeft, Braces, ChevronDown, CloudOff, FileQuestion, Mail, MailOpen, MailPlus, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Submission, SubmissionStatus } from "../../../shared/types";
 import { displayValue, formatDateTime, formatTime, humanizeField, mailtoHref, submissionTitle } from "../../lib/format";
 import { CodeBlock } from "../../components/CodeBlock";
@@ -26,6 +26,8 @@ interface SubmissionDetailProps {
   onClose: () => void;
   onStatus: (submission: Submission, status: SubmissionStatus) => void;
   onDelete: (submission: Submission) => Promise<void>;
+  /** Present when the form has a follow-up template. */
+  onFollowUp?: (submission: Submission) => void;
 }
 
 function orderedEntries(submission: Submission, fieldOrder: string[]) {
@@ -48,7 +50,7 @@ function DetailBar({ onClose, children }: { onClose: () => void; children?: Reac
   );
 }
 
-export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder, onClose, onStatus, onDelete }: SubmissionDetailProps) {
+export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder, onClose, onStatus, onDelete, onFollowUp }: SubmissionDetailProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (state === "loading" || !submission) {
@@ -118,6 +120,12 @@ export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder
             <dt className="text-[13px] font-medium text-muted">Received</dt>
             <dd className="m-0 text-sm text-ink">{formatDateTime(submission.receivedAt)}</dd>
           </div>
+          {submission.followUpAt && (
+            <div className="grid gap-1 px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-4">
+              <dt className="text-[13px] font-medium text-muted">Follow-up</dt>
+              <dd className="m-0 text-sm text-ink">Sent {formatDateTime(submission.followUpAt)}</dd>
+            </div>
+          )}
         </dl>
 
         <Collapsible.Root className="mx-5 my-5 sm:mx-6">
@@ -142,6 +150,11 @@ export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder
         <Button variant="secondary" size="sm" onClick={() => onStatus(submission, submission.status === "spam" ? "read" : "spam")}>
           {submission.status === "spam" ? <><ShieldCheck /> Not spam</> : <><ShieldAlert /> Mark spam</>}
         </Button>
+        {onFollowUp && submission.status !== "spam" && (
+          <Button variant="secondary" size="sm" onClick={() => onFollowUp(submission)}>
+            <MailPlus /> Follow-up
+          </Button>
+        )}
         <Button variant="danger" size="sm" className="ml-auto" onClick={() => setConfirmDelete(true)}>
           <Trash2 /> Delete
         </Button>

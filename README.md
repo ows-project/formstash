@@ -8,7 +8,8 @@ A single-tenant, self-hosted form collector built for Cloudflare Workers. Formst
 - JSON, URL-encoded, and multipart text submissions
 - Inbox, search, spam workflow, CSV export, and configurable form schemas
 - Origin allowlists, per-form rate limits, honeypots, and optional Turnstile
-- SMTP notifications and password resets delivered through Cloudflare Queues
+- SMTP or Resend notifications and password resets delivered through Cloudflare Queues
+- Resend template emails to submitters: automatic confirmations and manually sent follow-ups
 - Encrypted SMTP and Turnstile credentials, delivery activity, and retention cleanup
 
 ## Stack
@@ -58,6 +59,25 @@ Workers Builds is connected to this repository:
 Previews use the `formstash-preview` D1 database and the `formstash-email-preview` queue. That queue has no consumer, so previews never send email. Previews get `APP_SECRET` from the Preview base config (`pnpm wrangler preview base-config secret put APP_SECRET`). The Workers Builds API token needs **D1 Edit** and **Queues Edit** in addition to its default permissions.
 
 The deployment serves the React dashboard and Hono API from the same Worker. The daily retention job runs at 03:00 UTC. Do not commit `.dev.vars` or other deployment secrets. Keep `APP_SECRET` stable: changing it makes previously stored SMTP and Turnstile credentials unreadable until they are saved again.
+
+## Resend templates
+
+In **Settings → Email delivery**, choose **Resend**. The API key is read from a Worker secret:
+
+```bash
+pnpm wrangler secret put RESEND_API_KEY
+```
+
+The sender email must use a domain verified in Resend. Notifications, password resets, and test emails then go through Resend too.
+
+In **Form settings → Delivery → Submitter emails**, set the **Recipient field** (default `email`) and the ID or alias of templates published in Resend:
+
+- **Confirmation template:** sent automatically when a submission arrives, if **Send a confirmation** is on.
+- **Follow-up template:** sent manually. **Follow-up** in the form header emails every non-spam submission that has not had one yet; **Follow-up** in a submission's detail emails just that one. Both let you add variables such as a Google Play testing `link`.
+
+Every submission field is passed as a template variable (`{{{name}}}`); characters other than letters, numbers, and underscores become `_`. Formstash also passes `form_name`, `submitted_at`, and `source_url`. Set the subject in the template. Spam submissions and submissions without a valid recipient email are skipped. Deliveries appear in Activity and retry through the Queue; each delivery uses its ID as the Resend idempotency key.
+
+The Turnstile secret can also come from a `TURNSTILE_SECRET_KEY` Worker secret instead of Settings.
 
 ## Submit a form
 

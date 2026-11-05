@@ -10,13 +10,13 @@ Formstash is a single-tenant, self-hosted form collector for Cloudflare Workers.
 - Submitted fields are flexible by default. Optional Zod-backed schemas drop unknown fields and reject submissions that fail required, type, or validation rules.
 - Submission IP address, country, and user agent are not stored.
 - The dashboard uses an inbox and detail pane rather than an analytics homepage.
-- Email delivery uses SMTP through Cloudflare Queues. It follows the core collection flow so failed email never loses a submission.
+- Email delivery uses SMTP or Resend through Cloudflare Queues. Submitter confirmations and manual follow-ups use templates published in Resend. It follows the core collection flow so failed email never loses a submission.
 - SMTP passwords and Turnstile secrets are encrypted with the deployment's `APP_SECRET` before storage in D1.
 
 ## Current scope
 
 - **Core:** setup, owner authentication, form management, public ingestion, inbox, detail view, spam workflow, and CSV export.
-- **Delivery:** SMTP settings, test messages, Queue retries, activity history, and password reset email.
+- **Delivery:** SMTP or Resend settings, Resend template confirmations and follow-ups, test messages, Queue retries, activity history, and password reset email.
 - **Protection:** origin allowlists, idempotency, honeypots, strict schemas, Turnstile, privacy-preserving rate limits, and payload limits.
 - **Data lifecycle:** configurable submission retention plus automatic cleanup of expired sessions, reset tokens, rate-limit buckets, and old delivery history.
 

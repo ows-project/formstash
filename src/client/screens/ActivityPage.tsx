@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Inbox, KeyRound, Mail, RefreshCw, Send } from "lucide-react";
+import { Inbox, KeyRound, Mail, MailCheck, MailPlus, RefreshCw, Send } from "lucide-react";
 import { Link } from "wouter";
 import type { Delivery } from "../../shared/types";
 import { api } from "../api";
@@ -16,6 +16,8 @@ const KINDS: Record<Delivery["kind"], { label: string; icon: typeof Inbox }> = {
   submission: { label: "New submission", icon: Inbox },
   password_reset: { label: "Password reset", icon: KeyRound },
   test: { label: "Test email", icon: Send },
+  confirmation: { label: "Confirmation", icon: MailCheck },
+  follow_up: { label: "Follow-up", icon: MailPlus },
 };
 
 const STATUSES: Record<Delivery["status"], { label: string; tone: "brand" | "warning" | "success" | "danger" }> = {
@@ -53,7 +55,7 @@ export function ActivityPage() {
       <div className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-9">
         <PageHeading
           title="Email activity"
-          description="Notifications, test emails, and password resets, with their delivery status."
+          description="Notifications, confirmations, follow-ups, test emails, and password resets, with their delivery status."
           action={
             <Button variant="secondary" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
@@ -100,7 +102,7 @@ export function ActivityPage() {
               title="No emails yet"
               action={<Button variant="secondary" asChild><Link href="/settings">Set up email delivery</Link></Button>}
             >
-              Submission notifications, test emails, and password resets appear here once SMTP is set up.
+              Notifications, confirmations, follow-ups, and test emails appear here once email delivery is set up.
             </EmptyState>
           )}
         </div>

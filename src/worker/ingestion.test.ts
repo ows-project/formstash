@@ -3,7 +3,8 @@ import type { Env } from "./auth";
 import type { SchemaField } from "../shared/types";
 
 vi.mock("./delivery", () => ({
-  cleanupExpiredData: vi.fn(), consumeEmailBatch: vi.fn(), loadSettings: vi.fn(),
+  cleanupExpiredData: vi.fn(), consumeEmailBatch: vi.fn(), emailReady: vi.fn(), loadSettings: vi.fn(),
+  queueConfirmationEmail: vi.fn(), queueFollowUpEmails: vi.fn(),
   queuePasswordResetEmail: vi.fn(), queueSubmissionEmail: vi.fn(), queueTestEmail: vi.fn(),
 }));
 import worker from "./index";

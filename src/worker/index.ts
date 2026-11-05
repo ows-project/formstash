@@ -2,7 +2,11 @@ import { Hono, type Context } from "hono";
 import { createSession, endSession, hashOpaqueToken, hashPassword, randomToken, requireUser, verifyPassword, type Env, type User, type Variables } from "./auth";
 import { isHoneypotTripped, normalizeOrigin, normalizeSourceUrl, parseSubmission, slugify, SubmissionError } from "./submissions";
 import type { SubmissionPayload, SubmissionStatus } from "../shared/types";
-import { cleanupExpiredData, consumeEmailBatch, loadSettings, queuePasswordResetEmail, queueSubmissionEmail, queueTestEmail, type EmailJob } from "./delivery";
+import {
+  cleanupExpiredData, consumeEmailBatch, emailReady, loadSettings, queueConfirmationEmail, queueFollowUpEmails,
+  queuePasswordResetEmail, queueSubmissionEmail, queueTestEmail, type DeliveryKind, type EmailJob,
+} from "./delivery";
+import { isVariableKey } from "./resend";
 import { decryptSecret, encryptSecret } from "./secrets";
 import { parseFormSchema, validateFormPayload } from "./schema";
 
@@ -22,6 +26,10 @@ interface FormRow {
   strict_fields: number;
   turnstile_enabled: number;
   rate_limit_per_minute: number;
+  recipient_field: string;
+  confirmation_enabled: number;
+  confirmation_template: string;
+  follow_up_template: string;
   total_count: number;
   unread_count: number;
   spam_count: number;
@@ -34,7 +42,12 @@ interface SubmissionRow {
   source_url: string | null;
   status: SubmissionStatus;
   received_at: string;
+  follow_up_at: string | null;
 }
+
+// The latest follow-up that was not given up on, for the inbox and bulk sends.
+const FOLLOW_UP_AT = `(SELECT MAX(created_at) FROM email_deliveries
+  WHERE email_deliveries.submission_id = submissions.id AND kind = 'follow_up' AND status != 'failed') AS follow_up_at`;
 
 function parseStringArray(value: string): string[] {
   try {
@@ -60,6 +73,10 @@ function mapForm(row: FormRow) {
     schema: JSON.parse(row.schema_json),
     turnstileEnabled: Boolean(row.turnstile_enabled),
     rateLimitPerMinute: row.rate_limit_per_minute,
+    recipientField: row.recipient_field,
+    confirmationEnabled: Boolean(row.confirmation_enabled),
+    confirmationTemplate: row.confirmation_template,
+    followUpTemplate: row.follow_up_template,
     totalCount: row.total_count,
     unreadCount: row.unread_count,
     spamCount: row.spam_count,
@@ -74,6 +91,7 @@ function mapSubmission(row: SubmissionRow) {
     sourceUrl: row.source_url,
     status: row.status,
     receivedAt: row.received_at,
+    followUpAt: row.follow_up_at,
   };
 }
 
@@ -135,8 +153,10 @@ async function enforceRateLimit(context: Context<AppContext>, form: Pick<FormRow
 
 async function verifyTurnstile(env: Env, token: string): Promise<boolean> {
   const settings = await loadSettings(env.DB);
-  if (!env.APP_SECRET || !settings?.turnstile_secret_encrypted) return false;
-  const secret = await decryptSecret(settings.turnstile_secret_encrypted, env.APP_SECRET);
+  const secret = settings?.turnstile_secret_encrypted && env.APP_SECRET
+    ? await decryptSecret(settings.turnstile_secret_encrypted, env.APP_SECRET)
+    : env.TURNSTILE_SECRET_KEY;
+  if (!secret) return false;
   const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
     body: new URLSearchParams({ secret, response: token }),
@@ -240,7 +260,7 @@ app.post("/api/auth/password/request", async (context) => {
     ? await context.env.DB.prepare("SELECT id, email FROM users WHERE email = ?").bind(email).first<User>()
     : null;
   const settings = await loadSettings(context.env.DB);
-  if (user && settings?.smtp_enabled && settings.smtp_password_encrypted && context.env.APP_SECRET) {
+  if (user && emailReady(settings, context.env)) {
     const token = randomToken();
     const now = new Date();
     await context.env.DB.prepare(
@@ -298,6 +318,8 @@ app.get("/api/settings", async (context) => {
   return context.json({
     settings: {
       smtpEnabled: Boolean(settings?.smtp_enabled),
+      emailProvider: settings?.email_provider ?? "smtp",
+      resendConfigured: Boolean(context.env.RESEND_API_KEY),
       smtpHost: settings?.smtp_host ?? "",
       smtpPort: settings?.smtp_port ?? 465,
       smtpSecurity: settings?.smtp_security ?? "tls",
@@ -307,7 +329,7 @@ app.get("/api/settings", async (context) => {
       smtpFromEmail: settings?.smtp_from_email ?? "",
       retentionDays: settings?.retention_days ?? 0,
       turnstileSiteKey: settings?.turnstile_site_key ?? "",
-      turnstileSecretConfigured: Boolean(settings?.turnstile_secret_encrypted),
+      turnstileSecretConfigured: Boolean(settings?.turnstile_secret_encrypted || context.env.TURNSTILE_SECRET_KEY),
       encryptionReady: Boolean(context.env.APP_SECRET),
     },
   });
@@ -318,6 +340,7 @@ app.patch("/api/settings", async (context) => {
   if (!body) return context.json({ error: "Invalid settings" }, 422);
   const current = await loadSettings(context.env.DB);
   const smtpEnabled = Boolean(body.smtpEnabled);
+  const emailProvider = body.emailProvider === "resend" ? "resend" : "smtp";
   const smtpHost = typeof body.smtpHost === "string" ? body.smtpHost.trim().slice(0, 253) : "";
   const smtpPort = Number(body.smtpPort);
   const smtpSecurity = body.smtpSecurity === "starttls" ? "starttls" : "tls";
@@ -331,7 +354,11 @@ app.patch("/api/settings", async (context) => {
 
   if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65_535) return context.json({ error: "Invalid SMTP port" }, 422);
   if (!Number.isInteger(retentionDays) || retentionDays < 0 || retentionDays > 3_650) return context.json({ error: "Retention must be between 0 and 3650 days" }, 422);
-  if (smtpEnabled && (!smtpHost || !isEmail(smtpFromEmail))) return context.json({ error: "SMTP host and sender email are required" }, 422);
+  if (smtpEnabled && !isEmail(smtpFromEmail)) return context.json({ error: "A valid sender email is required" }, 422);
+  if (smtpEnabled && emailProvider === "smtp" && !smtpHost) return context.json({ error: "SMTP host is required" }, 422);
+  if (smtpEnabled && emailProvider === "resend" && !context.env.RESEND_API_KEY) {
+    return context.json({ error: "Set the RESEND_API_KEY Worker secret before enabling Resend" }, 422);
+  }
   if ((smtpPassword || turnstileSecret) && !context.env.APP_SECRET) {
     return context.json({ error: "Set the APP_SECRET Worker secret before saving credentials" }, 422);
   }
@@ -342,22 +369,22 @@ app.patch("/api/settings", async (context) => {
   const encryptedTurnstileSecret = turnstileSecret
     ? await encryptSecret(turnstileSecret, context.env.APP_SECRET!)
     : current?.turnstile_secret_encrypted ?? null;
-  if (smtpEnabled && !encryptedSmtpPassword) return context.json({ error: "SMTP password is required" }, 422);
+  if (smtpEnabled && emailProvider === "smtp" && !encryptedSmtpPassword) return context.json({ error: "SMTP password is required" }, 422);
 
   await context.env.DB.prepare(
     `INSERT INTO instance_settings
-      (id, smtp_enabled, smtp_host, smtp_port, smtp_security, smtp_username, smtp_password_encrypted,
+      (id, smtp_enabled, email_provider, smtp_host, smtp_port, smtp_security, smtp_username, smtp_password_encrypted,
        smtp_from_name, smtp_from_email, retention_days, turnstile_site_key, turnstile_secret_encrypted, updated_at)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET
-       smtp_enabled = excluded.smtp_enabled, smtp_host = excluded.smtp_host, smtp_port = excluded.smtp_port,
+       smtp_enabled = excluded.smtp_enabled, email_provider = excluded.email_provider, smtp_host = excluded.smtp_host, smtp_port = excluded.smtp_port,
        smtp_security = excluded.smtp_security, smtp_username = excluded.smtp_username,
        smtp_password_encrypted = excluded.smtp_password_encrypted, smtp_from_name = excluded.smtp_from_name,
        smtp_from_email = excluded.smtp_from_email, retention_days = excluded.retention_days,
        turnstile_site_key = excluded.turnstile_site_key, turnstile_secret_encrypted = excluded.turnstile_secret_encrypted,
        updated_at = excluded.updated_at`,
   ).bind(
-    smtpEnabled ? 1 : 0, smtpHost, smtpPort, smtpSecurity, smtpUsername, encryptedSmtpPassword,
+    smtpEnabled ? 1 : 0, emailProvider, smtpHost, smtpPort, smtpSecurity, smtpUsername, encryptedSmtpPassword,
     smtpFromName, smtpFromEmail, retentionDays, turnstileSiteKey, encryptedTurnstileSecret, new Date().toISOString(),
   ).run();
   return context.json({ saved: true });
@@ -365,8 +392,8 @@ app.patch("/api/settings", async (context) => {
 
 app.post("/api/settings/test-email", async (context) => {
   const settings = await loadSettings(context.env.DB);
-  if (!settings?.smtp_enabled || !settings.smtp_password_encrypted || !context.env.APP_SECRET) {
-    return context.json({ error: "Save and enable SMTP first" }, 422);
+  if (!emailReady(settings, context.env)) {
+    return context.json({ error: "Save and enable email delivery first" }, 422);
   }
   const id = await queueTestEmail(context.env, context.get("user").email);
   return context.json({ id }, 202);
@@ -380,7 +407,7 @@ app.get("/api/activity", async (context) => {
      FROM email_deliveries LEFT JOIN forms ON forms.id = email_deliveries.form_id
      ORDER BY email_deliveries.created_at DESC LIMIT 100`,
   ).all<{
-    id: string; form_name: string | null; recipient: string; kind: "submission" | "password_reset" | "test";
+    id: string; form_name: string | null; recipient: string; kind: DeliveryKind;
     status: "queued" | "retrying" | "delivered" | "failed"; attempts: number; last_error: string | null;
     created_at: string; delivered_at: string | null;
   }>();
@@ -430,6 +457,15 @@ app.patch("/api/forms/:formId", async (context) => {
     : typeof body?.notificationEmail === "string" ? body.notificationEmail.trim().toLowerCase() : null;
   const successUrl = cleanHttpUrl(body?.successUrl);
   const rateLimit = Number(body?.rateLimitPerMinute);
+  const recipientField = typeof body.recipientField === "string" && body.recipientField.trim() ? body.recipientField.trim() : "email";
+  const confirmationTemplate = typeof body.confirmationTemplate === "string" ? body.confirmationTemplate.trim() : "";
+  const followUpTemplate = typeof body.followUpTemplate === "string" ? body.followUpTemplate.trim() : "";
+  const templatePattern = /^[A-Za-z0-9_.-]{0,256}$/;
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,99}$/.test(recipientField)) return context.json({ error: "Invalid recipient field" }, 422);
+  if (!templatePattern.test(confirmationTemplate) || !templatePattern.test(followUpTemplate)) {
+    return context.json({ error: "Template IDs may contain only letters, numbers, dots, dashes, and underscores" }, 422);
+  }
+  if (body.confirmationEnabled && !confirmationTemplate) return context.json({ error: "Add a confirmation template ID before turning it on" }, 422);
   if (!name || !fields || !allowedOrigins) return context.json({ error: "Invalid form settings" }, 422);
   if (notificationEmail && !isEmail(notificationEmail)) return context.json({ error: "Invalid notification email" }, 422);
   if (body?.successUrl && !successUrl) return context.json({ error: "Success URL must use HTTP or HTTPS" }, 422);
@@ -446,12 +482,14 @@ app.patch("/api/forms/:formId", async (context) => {
 
   const result = await context.env.DB.prepare(
     `UPDATE forms SET name = ?, description = ?, fields_json = ?, allowed_origins_json = ?, notification_email = ?,
-       success_url = ?, is_active = ?, strict_fields = ?, turnstile_enabled = ?, rate_limit_per_minute = ?, schema_json = ?, updated_at = ?
+       success_url = ?, is_active = ?, strict_fields = ?, turnstile_enabled = ?, rate_limit_per_minute = ?, schema_json = ?,
+       recipient_field = ?, confirmation_enabled = ?, confirmation_template = ?, follow_up_template = ?, updated_at = ?
      WHERE id = ?`,
   ).bind(
     name, description, JSON.stringify(fields), JSON.stringify(allowedOrigins), notificationEmail, successUrl,
     body.isActive === false ? 0 : 1, body.strictFields ? 1 : 0, body.turnstileEnabled ? 1 : 0,
-    rateLimit, JSON.stringify(schema), new Date().toISOString(), context.req.param("formId"),
+    rateLimit, JSON.stringify(schema), recipientField, body.confirmationEnabled ? 1 : 0, confirmationTemplate,
+    followUpTemplate, new Date().toISOString(), context.req.param("formId"),
   ).run();
   if (!result.meta.changes) return context.json({ error: "Form not found" }, 404);
   return context.json({ saved: true });
@@ -508,7 +546,7 @@ app.get("/api/forms/:formId/submissions", async (context) => {
   }
 
   const rows = await context.env.DB.prepare(
-    `SELECT id, form_id, payload_json, source_url, status, received_at
+    `SELECT id, form_id, payload_json, source_url, status, received_at, ${FOLLOW_UP_AT}
      FROM submissions WHERE ${conditions.join(" AND ")}
      ORDER BY received_at DESC LIMIT 100`,
   ).bind(...bindings).all<SubmissionRow>();
@@ -517,7 +555,7 @@ app.get("/api/forms/:formId/submissions", async (context) => {
 
 app.get("/api/forms/:formId/submissions/:submissionId", async (context) => {
   const row = await context.env.DB.prepare(
-    "SELECT id, form_id, payload_json, source_url, status, received_at FROM submissions WHERE id = ? AND form_id = ?",
+    `SELECT id, form_id, payload_json, source_url, status, received_at, ${FOLLOW_UP_AT} FROM submissions WHERE id = ? AND form_id = ?`,
   ).bind(context.req.param("submissionId"), context.req.param("formId")).first<SubmissionRow>();
   if (!row) return context.json({ error: "Submission not found" }, 404);
   return context.json({ submission: mapSubmission(row) });
@@ -534,6 +572,49 @@ app.patch("/api/forms/:formId/submissions/:submissionId", async (context) => {
   ).bind(status, context.req.param("submissionId"), context.req.param("formId")).run();
   if (!result.meta.changes) return context.json({ error: "Submission not found" }, 404);
   return context.json({ status });
+});
+
+// Sends the form's follow-up template to one submission, or to every non-spam
+// submission that has not had a follow-up yet. Owner-entered variables extend the submission fields.
+app.post("/api/forms/:formId/follow-ups", async (context) => {
+  const body = jsonBody(await context.req.json().catch(() => null));
+  const formId = context.req.param("formId");
+  const input = jsonBody(body?.variables) ?? {};
+  const variables: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!isVariableKey(key)) return context.json({ error: `Invalid variable name "${key}". Use letters, numbers, and underscores.` }, 422);
+    if (typeof value !== "string" || value.length > 2000) return context.json({ error: `Variable "${key}" must be text up to 2000 characters` }, 422);
+    variables[key] = value;
+  }
+  if (Object.keys(variables).length > 20) return context.json({ error: "Use at most 20 variables" }, 422);
+  const submissionId = typeof body?.submissionId === "string" ? body.submissionId : null;
+
+  const form = await context.env.DB.prepare("SELECT recipient_field, follow_up_template FROM forms WHERE id = ?")
+    .bind(formId).first<Pick<FormRow, "recipient_field" | "follow_up_template">>();
+  if (!form) return context.json({ error: "Form not found" }, 404);
+  if (!form.follow_up_template) return context.json({ error: "Add a follow-up template ID in form settings first" }, 422);
+  const settings = await loadSettings(context.env.DB);
+  if (!emailReady(settings, context.env) || settings.email_provider !== "resend") {
+    return context.json({ error: "Enable Resend email delivery in Settings first" }, 422);
+  }
+
+  const rows = await context.env.DB.prepare(
+    submissionId
+      ? "SELECT id, payload_json FROM submissions WHERE form_id = ? AND id = ?"
+      : `SELECT id, payload_json FROM submissions WHERE form_id = ? AND status != 'spam' AND NOT EXISTS (
+           SELECT 1 FROM email_deliveries WHERE submission_id = submissions.id AND kind = 'follow_up' AND status != 'failed'
+         ) ORDER BY received_at ASC`,
+  ).bind(...(submissionId ? [formId, submissionId] : [formId])).all<{ id: string; payload_json: string }>();
+  if (submissionId && !rows.results.length) return context.json({ error: "Submission not found" }, 404);
+  const recipients = rows.results.flatMap((row) => {
+    const recipient = (JSON.parse(row.payload_json) as SubmissionPayload)[form.recipient_field];
+    return isEmail(recipient) ? [{ submissionId: row.id, recipient: recipient.trim().toLowerCase() }] : [];
+  });
+  if (submissionId && !recipients.length) {
+    return context.json({ error: `This submission has no valid email in "${form.recipient_field}"` }, 422);
+  }
+  const queued = await queueFollowUpEmails(context.env, formId, recipients, variables);
+  return context.json({ queued, skipped: rows.results.length - queued }, 202);
 });
 
 app.delete("/api/forms/:formId/submissions/:submissionId", async (context) => {
@@ -559,11 +640,12 @@ app.options("/f/:slug", async (context) => {
 app.post("/f/:slug", async (context) => {
   const form = await context.env.DB.prepare(
     `SELECT id, fields_json, schema_json, allowed_origins_json, notification_email, success_url, strict_fields,
-            turnstile_enabled, rate_limit_per_minute
+            turnstile_enabled, rate_limit_per_minute, recipient_field, confirmation_enabled, confirmation_template
      FROM forms WHERE slug = ? AND is_active = 1`,
   ).bind(context.req.param("slug")).first<Pick<FormRow,
     "id" | "fields_json" | "schema_json" | "allowed_origins_json" | "notification_email" | "success_url" |
-    "strict_fields" | "turnstile_enabled" | "rate_limit_per_minute"
+    "strict_fields" | "turnstile_enabled" | "rate_limit_per_minute" | "recipient_field" | "confirmation_enabled" |
+    "confirmation_template"
   >>();
   if (!form) return context.json({ error: "Form not found" }, 404);
 
@@ -616,12 +698,21 @@ app.post("/f/:slug", async (context) => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(id, form.id, JSON.stringify(payload), sourceUrl, status, idempotencyKey, receivedAt).run();
 
-    if (status !== "spam" && form.notification_email) {
+    const submitterEmail = payload[form.recipient_field];
+    const confirm = Boolean(form.confirmation_enabled && form.confirmation_template && isEmail(submitterEmail));
+    if (status !== "spam" && (form.notification_email || confirm)) {
       const settings = await loadSettings(context.env.DB);
-      if (settings?.smtp_enabled) {
-        context.executionCtx.waitUntil(queueSubmissionEmail(context.env, form.id, id, form.notification_email).catch((error) => {
-          console.error("Failed to queue submission email", error);
-        }));
+      if (emailReady(settings, context.env)) {
+        if (form.notification_email) {
+          context.executionCtx.waitUntil(queueSubmissionEmail(context.env, form.id, id, form.notification_email).catch((error) => {
+            console.error("Failed to queue submission email", error);
+          }));
+        }
+        if (confirm && settings.email_provider === "resend") {
+          context.executionCtx.waitUntil(queueConfirmationEmail(context.env, form.id, id, String(submitterEmail).trim().toLowerCase()).catch((error) => {
+            console.error("Failed to queue confirmation email", error);
+          }));
+        }
       }
     }
 

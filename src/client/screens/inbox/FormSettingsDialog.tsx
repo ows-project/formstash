@@ -11,10 +11,7 @@ import { X } from "lucide-react";
 import type { AppSettings, FormSummary } from "../../../shared/types";
 import { api } from "../../api";
 import { errorMessage } from "../../lib/format";
-import {
-  integrationWarnings,
-  type IntegrationSettings,
-} from "../../lib/snippets";
+import { integrationWarnings } from "../../lib/snippets";
 import { useForms } from "../../components/FormsProvider";
 import { Button } from "../../components/ui/button";
 import { Callout } from "../../components/ui/callout";
@@ -64,9 +61,7 @@ export function FormSettingsDialog({
   const [schemaOn, setSchemaOn] = useState(form.strictFields);
   const [schemaFields, setSchemaFields] = useState(form.schema);
   const [tab, setTab] = useState("general");
-  const [appSettings, setAppSettings] = useState<IntegrationSettings | null>(
-    null,
-  );
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -111,6 +106,10 @@ export function FormSettingsDialog({
             .map((value) => value.trim())
             .filter(Boolean),
           notificationEmail: data.get("notificationEmail"),
+          recipientField: data.get("recipientField"),
+          confirmationEnabled: data.get("confirmationEnabled") === "on",
+          confirmationTemplate: data.get("confirmationTemplate"),
+          followUpTemplate: data.get("followUpTemplate"),
           successUrl: data.get("successUrl"),
           rateLimitPerMinute: Number(data.get("rateLimitPerMinute")),
           strictFields: schemaOn,
@@ -285,14 +284,14 @@ export function FormSettingsDialog({
               <TabsContent
                 value="delivery"
                 forceMount
-                className="data-[state=inactive]:hidden"
+                className="grid gap-6 data-[state=inactive]:hidden"
               >
                 <Section title="Delivery">
                   <div className="grid gap-4">
                     <Field
                       label="Notification email"
                       optional
-                      hint="Emailed for each new submission once SMTP is set up in Settings."
+                      hint="Emailed for each new submission once email delivery is set up in Settings."
                     >
                       <Input
                         name="notificationEmail"
@@ -311,6 +310,60 @@ export function FormSettingsDialog({
                         type="url"
                         defaultValue={form.successUrl ?? ""}
                         placeholder="https://example.com/thanks"
+                      />
+                    </Field>
+                  </div>
+                </Section>
+                <Section title="Submitter emails">
+                  <p className="m-0 text-sm text-muted">
+                    Sent through Resend with templates published in your Resend
+                    dashboard. Every submission field is a template variable,
+                    for example <code className="font-mono text-[12px]">{"{{{name}}}"}</code>,
+                    plus <code className="font-mono text-[12px]">form_name</code>,{" "}
+                    <code className="font-mono text-[12px]">submitted_at</code>, and{" "}
+                    <code className="font-mono text-[12px]">source_url</code>. Set the
+                    subject in the template. Spam is never emailed.
+                  </p>
+                  {appSettings && appSettings.emailProvider !== "resend" && (
+                    <Callout tone="warning" title="Resend is not the email provider">
+                      Choose Resend in Settings to send these emails.
+                    </Callout>
+                  )}
+                  <Field
+                    label="Recipient field"
+                    hint="The submission field that holds the submitter's email address."
+                  >
+                    <Input
+                      name="recipientField"
+                      defaultValue={form.recipientField}
+                      className="max-w-60 font-mono text-[13px]"
+                    />
+                  </Field>
+                  <SwitchRow
+                    name="confirmationEnabled"
+                    defaultChecked={form.confirmationEnabled}
+                    label="Send a confirmation"
+                    description="Email the submitter as soon as their submission is received."
+                  />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Confirmation template" optional>
+                      <Input
+                        name="confirmationTemplate"
+                        defaultValue={form.confirmationTemplate}
+                        placeholder="Template ID or alias"
+                        className="font-mono text-[13px]"
+                      />
+                    </Field>
+                    <Field
+                      label="Follow-up template"
+                      optional
+                      hint="Sent manually from the inbox."
+                    >
+                      <Input
+                        name="followUpTemplate"
+                        defaultValue={form.followUpTemplate}
+                        placeholder="Template ID or alias"
+                        className="font-mono text-[13px]"
                       />
                     </Field>
                   </div>
