@@ -18,6 +18,24 @@ export interface SchemaField {
   rules?: ValidationRule[];
 }
 
+// A Resend template variable: "field" copies a submission field (value is the field name),
+// "manual" uses value as a default the owner can change when sending.
+export interface TemplateVariable {
+  key: string;
+  source: "field" | "manual";
+  value: string;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  /** Resend template ID or alias. */
+  resendTemplate: string;
+  variables: TemplateVariable[];
+  /** Sent to the submitter when a submission arrives. */
+  autoSend: boolean;
+}
+
 export interface FormSummary {
   id: string;
   name: string;
@@ -33,9 +51,7 @@ export interface FormSummary {
   turnstileEnabled: boolean;
   rateLimitPerMinute: number;
   recipientField: string;
-  confirmationEnabled: boolean;
-  confirmationTemplate: string;
-  followUpTemplate: string;
+  templates: EmailTemplate[];
   totalCount: number;
   unreadCount: number;
   spamCount: number;
@@ -48,7 +64,8 @@ export interface Submission {
   sourceUrl: string | null;
   status: SubmissionStatus;
   receivedAt: string;
-  followUpAt: string | null;
+  /** Saved templates already sent (or still sending) to this submission. */
+  sentTemplates: { templateId: string; sentAt: string }[];
 }
 
 export interface AppSettings {
@@ -72,7 +89,8 @@ export interface Delivery {
   id: string;
   formName: string | null;
   recipient: string;
-  kind: "submission" | "password_reset" | "test" | "confirmation" | "follow_up";
+  kind: "submission" | "password_reset" | "test" | "template";
+  templateName: string | null;
   status: "queued" | "retrying" | "delivered" | "failed";
   attempts: number;
   lastError: string | null;

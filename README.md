@@ -9,7 +9,7 @@ A single-tenant, self-hosted form collector built for Cloudflare Workers. Formst
 - Inbox, search, spam workflow, CSV export, and configurable form schemas
 - Origin allowlists, per-form rate limits, honeypots, and optional Turnstile
 - SMTP or Resend notifications and password resets delivered through Cloudflare Queues
-- Resend template emails to submitters: automatic confirmations and manually sent follow-ups
+- Saved Resend templates per form, sent to submitters automatically or from the inbox, with field-mapped and manual variables
 - Encrypted SMTP and Turnstile credentials, delivery activity, and retention cleanup
 
 ## Stack
@@ -72,12 +72,16 @@ pnpm wrangler secret put RESEND_API_KEY
 
 The sender email must use a domain verified in Resend. Notifications, password resets, and test emails then go through Resend too.
 
-In **Form settings → Delivery → Submitter emails**, set the **Recipient field** (default `email`) and the ID or alias of templates published in Resend:
+In **Form settings → Emails**, set the **Recipient field** (default `email`) and save one template per email you send. Each template has a name, the ID or alias of a template published in Resend, and optionally:
 
-- **Confirmation template:** sent automatically when a submission arrives, if **Send a confirmation** is on.
-- **Follow-up template:** sent manually. **Follow-up** in the form header emails every non-spam submission that has not had one yet; **Follow-up** in a submission's detail emails just that one. Both let you add variables such as a Google Play testing `link`.
+- **Send automatically:** emails the submitter when a submission arrives, for example a confirmation.
+- **Variables:** a variable either copies a submission field (`NAME` ← `name`) or is filled in manually. A manual variable's saved value is its default and can be changed each time you send.
 
-Every submission field is passed as a template variable (`{{{name}}}`); characters other than letters, numbers, and underscores become `_`. Formstash also passes `form_name`, `submitted_at`, and `source_url`. Set the subject in the template. Spam submissions and submissions without a valid recipient email are skipped. Deliveries appear in Activity and retry through the Queue; each delivery uses its ID as the Resend idempotency key.
+Every submission field is also passed under its own name (`{{{name}}}`); characters other than letters, numbers, and underscores become `_`. Formstash also passes `form_name`, `submitted_at`, and `source_url`. Empty values are left out so the template's fallback applies. Set the subject in the template.
+
+**Send email** in the form header sends a template to every submission that has not received it yet, or to everyone; **Send email** in a submission's detail sends it to that one. Spam submissions and submissions without a valid recipient email are skipped. Deliveries appear in Activity under the template's name and retry through the Queue; each delivery uses its ID as the Resend idempotency key.
+
+The API equivalents are `templates` in the form settings PATCH and `POST /api/forms/:formId/templates/:templateId/send` with `{ "submissionId"?, "audience": "pending" | "all", "variables": { "LINK": "..." } }`.
 
 The Turnstile secret can also come from a `TURNSTILE_SECRET_KEY` Worker secret instead of Settings.
 

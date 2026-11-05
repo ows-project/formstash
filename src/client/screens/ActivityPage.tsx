@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Inbox, KeyRound, Mail, MailCheck, MailPlus, RefreshCw, Send } from "lucide-react";
+import { Inbox, KeyRound, Mail, MailCheck, RefreshCw, Send } from "lucide-react";
 import { Link } from "wouter";
 import type { Delivery } from "../../shared/types";
 import { api } from "../api";
@@ -16,8 +16,7 @@ const KINDS: Record<Delivery["kind"], { label: string; icon: typeof Inbox }> = {
   submission: { label: "New submission", icon: Inbox },
   password_reset: { label: "Password reset", icon: KeyRound },
   test: { label: "Test email", icon: Send },
-  confirmation: { label: "Confirmation", icon: MailCheck },
-  follow_up: { label: "Follow-up", icon: MailPlus },
+  template: { label: "Template email", icon: MailCheck },
 };
 
 const STATUSES: Record<Delivery["status"], { label: string; tone: "brand" | "warning" | "success" | "danger" }> = {
@@ -55,7 +54,7 @@ export function ActivityPage() {
       <div className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-9">
         <PageHeading
           title="Email activity"
-          description="Notifications, confirmations, follow-ups, test emails, and password resets, with their delivery status."
+          description="Notifications, template emails, test emails, and password resets, with their delivery status."
           action={
             <Button variant="secondary" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
@@ -78,7 +77,7 @@ export function ActivityPage() {
               <div key={delivery.id} className="border-b border-line px-5 py-3.5 last:border-0">
                 <div className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1", columns)}>
                   <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-                    <KindIcon className="size-4 shrink-0 text-subtle" /> {kind.label}
+                    <KindIcon className="size-4 shrink-0 text-subtle" /> {delivery.kind === "template" && delivery.templateName ? delivery.templateName : kind.label}
                   </span>
                   <span className="truncate text-sm text-ink-2 max-md:hidden">{delivery.formName ?? "—"}</span>
                   <span className="col-start-1 truncate text-sm text-muted md:col-start-auto md:text-ink-2">{delivery.recipient}</span>
@@ -102,7 +101,7 @@ export function ActivityPage() {
               title="No emails yet"
               action={<Button variant="secondary" asChild><Link href="/settings">Set up email delivery</Link></Button>}
             >
-              Notifications, confirmations, follow-ups, and test emails appear here once email delivery is set up.
+              Notifications, template emails, and test emails appear here once email delivery is set up.
             </EmptyState>
           )}
         </div>

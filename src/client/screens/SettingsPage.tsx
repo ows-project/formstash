@@ -147,7 +147,7 @@ export function SettingsPage() {
               <div className={provider === "resend" ? "grid gap-4" : "hidden"}>
                 {settings.resendConfigured ? (
                   <Callout tone="info" title="Resend API key is set">
-                    Formstash reads it from the <code className="font-mono text-[12px]">RESEND_API_KEY</code> Worker secret. Confirmation and follow-up emails use templates published in Resend.
+                    Formstash reads it from the <code className="font-mono text-[12px]">RESEND_API_KEY</code> Worker secret. Form email templates use templates published in Resend.
                   </Callout>
                 ) : (
                   <Callout tone="warning" title="Add your Resend API key">

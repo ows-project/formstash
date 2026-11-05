@@ -1,4 +1,4 @@
-import type { SubmissionPayload } from "../shared/types";
+import type { SubmissionPayload, TemplateVariable } from "../shared/types";
 import type { EmailContent } from "./smtp-message";
 
 export interface ResendTemplate {
@@ -18,25 +18,37 @@ export function isVariableKey(key: string): boolean {
   return /^[A-Za-z0-9_]{1,50}$/.test(key) && !RESERVED.has(key);
 }
 
-// Submission fields become template variables. Keys are reduced to Resend's
-// character set, values to its limits; nulls are left out so fallbacks apply.
-export function templateVariables(
+function toValue(value: unknown): string | number | null {
+  if (value === null || value === undefined || value === "") return null;
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : String(value).slice(0, 2000);
+}
+
+// Every submission field (keys reduced to Resend's character set) plus form_name,
+// submitted_at, and source_url, then the template's own variables on top. Field variables
+// copy a submission field; manual ones use the send-time override or their saved default.
+// Empty values are left out so the template's fallback applies.
+export function resolveVariables(
   payload: SubmissionPayload,
   meta: { formName: string | null; submittedAt: string | null; sourceUrl: string | null },
-  extra: Record<string, string> = {},
+  definitions: TemplateVariable[] = [],
+  overrides: Record<string, string> = {},
 ): Record<string, string | number> {
   const variables: Record<string, string | number> = {};
-  const entries: [string, unknown][] = [
+  const builtins: [string, unknown][] = [
     ...Object.entries(payload),
     ["form_name", meta.formName],
     ["submitted_at", meta.submittedAt],
     ["source_url", meta.sourceUrl],
-    ...Object.entries(extra),
   ];
-  for (const [rawKey, value] of entries) {
+  for (const [rawKey, raw] of builtins) {
     const key = rawKey.replace(/[^A-Za-z0-9_]/g, "_");
-    if (value === null || value === undefined || !isVariableKey(key)) continue;
-    variables[key] = typeof value === "number" && Number.isSafeInteger(value) ? value : String(value).slice(0, 2000);
+    const value = toValue(raw);
+    if (value !== null && isVariableKey(key)) variables[key] = value;
+  }
+  for (const definition of definitions) {
+    const value = toValue(definition.source === "field" ? payload[definition.value] : overrides[definition.key] ?? definition.value);
+    if (value === null) delete variables[definition.key];
+    else variables[definition.key] = value;
   }
   return variables;
 }

@@ -13,10 +13,10 @@ import { Callout } from "../../components/ui/callout";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Segmented } from "../../components/ui/segmented";
 import { Tooltip } from "../../components/ui/tooltip";
-import { FollowUpDialog } from "./FollowUpDialog";
 import { FormHeader } from "./FormHeader";
 import { FormSettingsDialog } from "./FormSettingsDialog";
 import { IntegrationDialog } from "./IntegrationDialog";
+import { SendEmailDialog } from "./SendEmailDialog";
 import { SubmissionDetail } from "./SubmissionDetail";
 import { SubmissionList } from "./SubmissionList";
 
@@ -67,7 +67,7 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
   const [integrationOpen, setIntegrationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // submission null targets every pending submission. Kept after closing so the dialog doesn't change while fading out.
-  const [followUp, setFollowUp] = useState<{ open: boolean; submission: Submission | null }>({ open: false, submission: null });
+  const [sendEmail, setSendEmail] = useState<{ open: boolean; submission: Submission | null }>({ open: false, submission: null });
   const autoRead = useRef(new Set<string>());
 
   useEffect(() => {
@@ -167,7 +167,7 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
   return (
     <div className="inbox-layout motion-enter relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <section className="inbox-list flex min-h-0 min-w-0 flex-1 flex-col" data-detail-open={!!submissionId}>
-        <FormHeader form={form} onIntegrate={() => setIntegrationOpen(true)} onSettings={() => setSettingsOpen(true)} onFollowUp={() => setFollowUp({ open: true, submission: null })} />
+        <FormHeader form={form} onIntegrate={() => setIntegrationOpen(true)} onSettings={() => setSettingsOpen(true)} onSendEmail={() => setSendEmail({ open: true, submission: null })} />
 
         <div className="flex flex-col gap-3 px-4 pb-3 sm:flex-row sm:items-center sm:px-6">
           <label className="relative block sm:w-72 lg:w-80">
@@ -258,18 +258,19 @@ export function InboxPage({ form, submissionId }: { form: FormSummary; submissio
             onClose={closeDetail}
             onStatus={(submission, status) => void updateStatus(submission, status)}
             onDelete={deleteSubmission}
-            onFollowUp={form.followUpTemplate ? (submission) => setFollowUp({ open: true, submission }) : undefined}
+            templateNames={Object.fromEntries(form.templates.map((template) => [template.id, template.name]))}
+            onSendEmail={form.templates.length ? (submission) => setSendEmail({ open: true, submission }) : undefined}
           />
         )}
       </SubmissionPanel>
 
       <IntegrationDialog form={form} open={integrationOpen} onOpenChange={setIntegrationOpen} onOpenSettings={() => { setIntegrationOpen(false); setSettingsOpen(true); }} />
       <FormSettingsDialog form={form} open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <FollowUpDialog
+      <SendEmailDialog
         form={form}
-        submission={followUp.submission}
-        open={followUp.open}
-        onOpenChange={(open) => setFollowUp((current) => ({ ...current, open }))}
+        submission={sendEmail.submission}
+        open={sendEmail.open}
+        onOpenChange={(open) => setSendEmail((current) => ({ ...current, open }))}
         onSent={() => { setFetched(null); refresh(); }}
       />
     </div>

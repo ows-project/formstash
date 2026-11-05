@@ -28,6 +28,7 @@ import { Field } from "../../components/ui/field";
 import { Input, Textarea } from "../../components/ui/input";
 import { SwitchRow } from "../../components/ui/switch";
 import { SchemaEditor } from "./SchemaEditor";
+import { TemplatesEditor, type TemplateDraft } from "./TemplatesEditor";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -60,6 +61,7 @@ export function FormSettingsDialog({
   const [turnstileOn, setTurnstileOn] = useState(form.turnstileEnabled);
   const [schemaOn, setSchemaOn] = useState(form.strictFields);
   const [schemaFields, setSchemaFields] = useState(form.schema);
+  const [templates, setTemplates] = useState<TemplateDraft[]>(form.templates);
   const [tab, setTab] = useState("general");
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -69,6 +71,7 @@ export function FormSettingsDialog({
     setTurnstileOn(form.turnstileEnabled);
     setSchemaOn(form.strictFields);
     setSchemaFields(form.schema);
+    setTemplates(form.templates);
     setTab("general");
     const controller = new AbortController();
     api<{ settings: AppSettings }>("/api/settings", {
@@ -77,7 +80,7 @@ export function FormSettingsDialog({
       .then((result) => setAppSettings(result.settings))
       .catch(() => undefined);
     return () => controller.abort();
-  }, [open, form.turnstileEnabled, form.strictFields, form.schema]);
+  }, [open, form.turnstileEnabled, form.strictFields, form.schema, form.templates]);
 
   const turnstileWarning = turnstileOn
     ? integrationWarnings(
@@ -107,9 +110,7 @@ export function FormSettingsDialog({
             .filter(Boolean),
           notificationEmail: data.get("notificationEmail"),
           recipientField: data.get("recipientField"),
-          confirmationEnabled: data.get("confirmationEnabled") === "on",
-          confirmationTemplate: data.get("confirmationTemplate"),
-          followUpTemplate: data.get("followUpTemplate"),
+          templates,
           successUrl: data.get("successUrl"),
           rateLimitPerMinute: Number(data.get("rateLimitPerMinute")),
           strictFields: schemaOn,
@@ -190,6 +191,9 @@ export function FormSettingsDialog({
               </TabsTrigger>
               <TabsTrigger value="delivery" className="flex-1">
                 Delivery
+              </TabsTrigger>
+              <TabsTrigger value="emails" className="flex-1">
+                Emails
               </TabsTrigger>
               <TabsTrigger value="protection" className="flex-1">
                 Protection
@@ -314,60 +318,41 @@ export function FormSettingsDialog({
                     </Field>
                   </div>
                 </Section>
-                <Section title="Submitter emails">
-                  <p className="m-0 text-sm text-muted">
-                    Sent through Resend with templates published in your Resend
-                    dashboard. Every submission field is a template variable,
-                    for example <code className="font-mono text-[12px]">{"{{{name}}}"}</code>,
-                    plus <code className="font-mono text-[12px]">form_name</code>,{" "}
-                    <code className="font-mono text-[12px]">submitted_at</code>, and{" "}
-                    <code className="font-mono text-[12px]">source_url</code>. Set the
-                    subject in the template. Spam is never emailed.
-                  </p>
-                  {appSettings && appSettings.emailProvider !== "resend" && (
-                    <Callout tone="warning" title="Resend is not the email provider">
-                      Choose Resend in Settings to send these emails.
-                    </Callout>
-                  )}
-                  <Field
-                    label="Recipient field"
-                    hint="The submission field that holds the submitter's email address."
-                  >
-                    <Input
-                      name="recipientField"
-                      defaultValue={form.recipientField}
-                      className="max-w-60 font-mono text-[13px]"
-                    />
-                  </Field>
-                  <SwitchRow
-                    name="confirmationEnabled"
-                    defaultChecked={form.confirmationEnabled}
-                    label="Send a confirmation"
-                    description="Email the submitter as soon as their submission is received."
+              </TabsContent>
+              <TabsContent
+                value="emails"
+                forceMount
+                className="grid gap-4 data-[state=inactive]:hidden"
+              >
+                <p className="m-0 text-sm text-muted">
+                  Send templates published in Resend to the people who submit
+                  this form, automatically or from the inbox. Every submission
+                  field is available as a variable under its own name, plus{" "}
+                  <code className="font-mono text-[12px]">form_name</code>,{" "}
+                  <code className="font-mono text-[12px]">submitted_at</code>, and{" "}
+                  <code className="font-mono text-[12px]">source_url</code>. Spam
+                  is never emailed.
+                </p>
+                {appSettings && appSettings.emailProvider !== "resend" && (
+                  <Callout tone="warning" title="Resend is not the email provider">
+                    Choose Resend in Settings to send these emails.
+                  </Callout>
+                )}
+                <Field
+                  label="Recipient field"
+                  hint="The submission field that holds the submitter's email address."
+                >
+                  <Input
+                    name="recipientField"
+                    defaultValue={form.recipientField}
+                    className="max-w-60 font-mono text-[13px]"
                   />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Confirmation template" optional>
-                      <Input
-                        name="confirmationTemplate"
-                        defaultValue={form.confirmationTemplate}
-                        placeholder="Template ID or alias"
-                        className="font-mono text-[13px]"
-                      />
-                    </Field>
-                    <Field
-                      label="Follow-up template"
-                      optional
-                      hint="Sent manually from the inbox."
-                    >
-                      <Input
-                        name="followUpTemplate"
-                        defaultValue={form.followUpTemplate}
-                        placeholder="Template ID or alias"
-                        className="font-mono text-[13px]"
-                      />
-                    </Field>
-                  </div>
-                </Section>
+                </Field>
+                <TemplatesEditor
+                  templates={templates}
+                  onChange={setTemplates}
+                  fields={[...new Set([...schemaFields.map((field) => field.name), ...form.fields])]}
+                />
               </TabsContent>
               <TabsContent
                 value="protection"

@@ -1,7 +1,7 @@
-import type { SubmissionPayload } from "../shared/types";
+import type { SubmissionPayload, TemplateVariable } from "../shared/types";
 import type { Env } from "./auth";
 import { decryptSecret } from "./secrets";
-import { sendResend, templateVariables, type ResendTemplate } from "./resend";
+import { resolveVariables, sendResend } from "./resend";
 import { sendSmtp, type EmailContent, type SmtpConfig } from "./smtp";
 
 export interface EmailJob {
@@ -24,16 +24,17 @@ export interface SettingsRow {
   turnstile_secret_encrypted: string | null;
 }
 
-export type DeliveryKind = "submission" | "password_reset" | "test" | "confirmation" | "follow_up";
+export type DeliveryKind = "submission" | "password_reset" | "test" | "template";
 
 interface DeliveryRow {
   id: string;
   recipient: string;
   kind: DeliveryKind;
   variables_json: string | null;
+  template_id: string | null;
   form_name: string | null;
-  confirmation_template: string | null;
-  follow_up_template: string | null;
+  resend_template: string | null;
+  template_variables_json: string | null;
   payload_json: string | null;
   source_url: string | null;
   received_at: string | null;
@@ -134,25 +135,23 @@ export async function queueSubmissionEmail(env: Env, formId: string, submissionI
   return createDelivery(env, { formId, submissionId, recipient, kind: "submission" });
 }
 
-export async function queueConfirmationEmail(env: Env, formId: string, submissionId: string, recipient: string): Promise<string> {
-  return createDelivery(env, { formId, submissionId, recipient, kind: "confirmation" });
-}
-
-// Queues one follow-up per recipient; owner-entered variables are stored with each delivery.
-export async function queueFollowUpEmails(
+// Queues one email per recipient from a saved template. Send-time values for its
+// manual variables are stored with each delivery.
+export async function queueTemplateEmails(
   env: Env,
   formId: string,
+  templateId: string,
   recipients: { submissionId: string; recipient: string }[],
-  variables: Record<string, string>,
+  overrides: Record<string, string> = {},
 ): Promise<number> {
   const now = new Date().toISOString();
-  const variablesJson = JSON.stringify(variables);
+  const overridesJson = Object.keys(overrides).length ? JSON.stringify(overrides) : null;
   for (let start = 0; start < recipients.length; start += 100) {
     const chunk = recipients.slice(start, start + 100).map((entry) => ({ ...entry, id: crypto.randomUUID() }));
     await env.DB.batch(chunk.map((entry) => env.DB.prepare(
-      `INSERT INTO email_deliveries (id, form_id, submission_id, recipient, kind, variables_json, created_at)
-       VALUES (?, ?, ?, ?, 'follow_up', ?, ?)`,
-    ).bind(entry.id, formId, entry.submissionId, entry.recipient, variablesJson, now)));
+      `INSERT INTO email_deliveries (id, form_id, submission_id, template_id, recipient, kind, variables_json, created_at)
+       VALUES (?, ?, ?, ?, ?, 'template', ?, ?)`,
+    ).bind(entry.id, formId, entry.submissionId, templateId, entry.recipient, overridesJson, now)));
     try {
       await env.EMAIL_QUEUE.sendBatch(chunk.map((entry) => ({ body: { deliveryId: entry.id } })));
     } catch (error) {
@@ -176,10 +175,12 @@ export async function queueTestEmail(env: Env, recipient: string): Promise<strin
 async function deliver(env: Env, job: EmailJob): Promise<void> {
   const row = await env.DB.prepare(
     `SELECT email_deliveries.id, email_deliveries.recipient, email_deliveries.kind, email_deliveries.variables_json,
-            forms.name AS form_name, forms.confirmation_template, forms.follow_up_template,
+            email_deliveries.template_id, forms.name AS form_name, email_templates.resend_template,
+            email_templates.variables_json AS template_variables_json,
             submissions.payload_json, submissions.source_url, submissions.received_at
      FROM email_deliveries
      LEFT JOIN forms ON forms.id = email_deliveries.form_id
+     LEFT JOIN email_templates ON email_templates.id = email_deliveries.template_id
      LEFT JOIN submissions ON submissions.id = email_deliveries.submission_id
      WHERE email_deliveries.id = ?`,
   ).bind(job.deliveryId).first<DeliveryRow>();
@@ -187,20 +188,19 @@ async function deliver(env: Env, job: EmailJob): Promise<void> {
 
   const settings = await loadSettings(env.DB);
   if (!emailReady(settings, env)) throw new Error("Email delivery is not enabled or its credentials are missing");
-  if (row.kind === "confirmation" || row.kind === "follow_up") {
+  if (row.kind === "template") {
     if (settings.email_provider !== "resend") throw new Error("Template emails require Resend as the email provider");
-    const templateId = row.kind === "confirmation" ? row.confirmation_template : row.follow_up_template;
-    if (!templateId) throw new Error("The form has no Resend template for this email");
+    if (!row.resend_template) throw new Error("The email template was deleted");
     if (!row.payload_json) throw new Error("The submission was deleted");
-    const template: ResendTemplate = {
-      id: templateId,
-      variables: templateVariables(
-        JSON.parse(row.payload_json) as SubmissionPayload,
-        { formName: row.form_name, submittedAt: row.received_at, sourceUrl: row.source_url },
-        JSON.parse(row.variables_json ?? "{}") as Record<string, string>,
-      ),
-    };
-    await sendResend(env.RESEND_API_KEY!, sender(settings), { to: row.recipient, idempotencyKey: row.id, template });
+    const variables = resolveVariables(
+      JSON.parse(row.payload_json) as SubmissionPayload,
+      { formName: row.form_name, submittedAt: row.received_at, sourceUrl: row.source_url },
+      JSON.parse(row.template_variables_json ?? "[]") as TemplateVariable[],
+      JSON.parse(row.variables_json ?? "{}") as Record<string, string>,
+    );
+    await sendResend(env.RESEND_API_KEY!, sender(settings), {
+      to: row.recipient, idempotencyKey: row.id, template: { id: row.resend_template, variables },
+    });
   } else {
     const content = row.kind === "submission"
       ? submissionEmail(row)

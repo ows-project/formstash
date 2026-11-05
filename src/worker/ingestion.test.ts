@@ -3,8 +3,7 @@ import type { Env } from "./auth";
 import type { SchemaField } from "../shared/types";
 
 vi.mock("./delivery", () => ({
-  cleanupExpiredData: vi.fn(), consumeEmailBatch: vi.fn(), emailReady: vi.fn(), loadSettings: vi.fn(),
-  queueConfirmationEmail: vi.fn(), queueFollowUpEmails: vi.fn(),
+  cleanupExpiredData: vi.fn(), consumeEmailBatch: vi.fn(), emailReady: vi.fn(), loadSettings: vi.fn(), queueTemplateEmails: vi.fn(),
   queuePasswordResetEmail: vi.fn(), queueSubmissionEmail: vi.fn(), queueTestEmail: vi.fn(),
 }));
 import worker from "./index";
@@ -28,6 +27,7 @@ function database(enforced: boolean, schema: SchemaField[]) {
         async run() { writes.push(values); return { meta: { changes: 1 } }; },
       };
     },
+    async batch() { return []; },
   } as unknown as D1Database;
   return { DB, writes };
 }

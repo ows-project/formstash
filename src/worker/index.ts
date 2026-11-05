@@ -1,10 +1,10 @@
 import { Hono, type Context } from "hono";
 import { createSession, endSession, hashOpaqueToken, hashPassword, randomToken, requireUser, verifyPassword, type Env, type User, type Variables } from "./auth";
 import { isHoneypotTripped, normalizeOrigin, normalizeSourceUrl, parseSubmission, slugify, SubmissionError } from "./submissions";
-import type { SubmissionPayload, SubmissionStatus } from "../shared/types";
+import type { EmailTemplate, SubmissionPayload, SubmissionStatus, TemplateVariable } from "../shared/types";
 import {
-  cleanupExpiredData, consumeEmailBatch, emailReady, loadSettings, queueConfirmationEmail, queueFollowUpEmails,
-  queuePasswordResetEmail, queueSubmissionEmail, queueTestEmail, type DeliveryKind, type EmailJob,
+  cleanupExpiredData, consumeEmailBatch, emailReady, loadSettings,
+  queuePasswordResetEmail, queueSubmissionEmail, queueTemplateEmails, queueTestEmail, type DeliveryKind, type EmailJob,
 } from "./delivery";
 import { isVariableKey } from "./resend";
 import { decryptSecret, encryptSecret } from "./secrets";
@@ -27,9 +27,6 @@ interface FormRow {
   turnstile_enabled: number;
   rate_limit_per_minute: number;
   recipient_field: string;
-  confirmation_enabled: number;
-  confirmation_template: string;
-  follow_up_template: string;
   total_count: number;
   unread_count: number;
   spam_count: number;
@@ -42,12 +39,67 @@ interface SubmissionRow {
   source_url: string | null;
   status: SubmissionStatus;
   received_at: string;
-  follow_up_at: string | null;
+  sent_templates_json: string;
 }
 
-// The latest follow-up that was not given up on, for the inbox and bulk sends.
-const FOLLOW_UP_AT = `(SELECT MAX(created_at) FROM email_deliveries
-  WHERE email_deliveries.submission_id = submissions.id AND kind = 'follow_up' AND status != 'failed') AS follow_up_at`;
+interface TemplateRow {
+  id: string;
+  form_id: string;
+  name: string;
+  resend_template: string;
+  variables_json: string;
+  auto_send: number;
+}
+
+// Saved templates sent to a submission, ignoring deliveries that were given up on.
+const SENT_TEMPLATES = `(SELECT json_group_array(json_object('templateId', template_id, 'sentAt', created_at))
+  FROM email_deliveries WHERE email_deliveries.submission_id = submissions.id AND kind = 'template'
+    AND template_id IS NOT NULL AND status != 'failed') AS sent_templates_json`;
+
+function mapTemplate(row: TemplateRow): EmailTemplate {
+  return {
+    id: row.id,
+    name: row.name,
+    resendTemplate: row.resend_template,
+    variables: JSON.parse(row.variables_json) as TemplateVariable[],
+    autoSend: Boolean(row.auto_send),
+  };
+}
+
+const FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9_-]{0,99}$/;
+const RESEND_TEMPLATE = /^[A-Za-z0-9_.-]{1,256}$/;
+
+// Validates the templates sent with form settings; returns an error message for the first problem.
+function parseTemplates(value: unknown): (Omit<EmailTemplate, "id"> & { id?: string })[] | string {
+  if (!Array.isArray(value)) return "Invalid email templates";
+  if (value.length > 20) return "Use at most 20 email templates";
+  const templates = [];
+  for (const entry of value) {
+    const template = jsonBody(entry);
+    const name = cleanName(template?.name);
+    const resendTemplate = typeof template?.resendTemplate === "string" ? template.resendTemplate.trim() : "";
+    if (!template || !name) return "Each email template needs a name";
+    if (!RESEND_TEMPLATE.test(resendTemplate)) return `"${name}" needs a Resend template ID or alias (letters, numbers, dots, dashes, underscores)`;
+    if (!Array.isArray(template.variables) || template.variables.length > 50) return `"${name}" can have at most 50 variables`;
+    const variables: TemplateVariable[] = [];
+    for (const raw of template.variables) {
+      const variable = jsonBody(raw);
+      const key = typeof variable?.key === "string" ? variable.key.trim() : "";
+      const source = variable?.source === "field" ? "field" : "manual";
+      const fieldValue = typeof variable?.value === "string" ? variable.value : "";
+      if (!isVariableKey(key)) return `Invalid variable "${key}" in "${name}". Use letters, numbers, and underscores; EMAIL, FIRST_NAME, LAST_NAME, and UNSUBSCRIBE_URL are reserved.`;
+      if (variables.some((existing) => existing.key === key)) return `Variable "${key}" appears twice in "${name}"`;
+      if (source === "field" && !FIELD_NAME.test(fieldValue.trim())) return `Choose a submission field for "${key}" in "${name}"`;
+      if (fieldValue.length > 2000) return `Variable "${key}" in "${name}" is longer than 2000 characters`;
+      variables.push({ key, source, value: source === "field" ? fieldValue.trim() : fieldValue });
+    }
+    templates.push({
+      id: typeof template.id === "string" ? template.id : undefined,
+      name, resendTemplate, variables, autoSend: Boolean(template.autoSend),
+    });
+  }
+  return templates;
+}
 
 function parseStringArray(value: string): string[] {
   try {
@@ -58,7 +110,7 @@ function parseStringArray(value: string): string[] {
   }
 }
 
-function mapForm(row: FormRow) {
+function mapForm(row: FormRow, templates: EmailTemplate[]) {
   return {
     id: row.id,
     name: row.name,
@@ -74,9 +126,7 @@ function mapForm(row: FormRow) {
     turnstileEnabled: Boolean(row.turnstile_enabled),
     rateLimitPerMinute: row.rate_limit_per_minute,
     recipientField: row.recipient_field,
-    confirmationEnabled: Boolean(row.confirmation_enabled),
-    confirmationTemplate: row.confirmation_template,
-    followUpTemplate: row.follow_up_template,
+    templates,
     totalCount: row.total_count,
     unreadCount: row.unread_count,
     spamCount: row.spam_count,
@@ -91,7 +141,7 @@ function mapSubmission(row: SubmissionRow) {
     sourceUrl: row.source_url,
     status: row.status,
     receivedAt: row.received_at,
-    followUpAt: row.follow_up_at,
+    sentTemplates: JSON.parse(row.sent_templates_json) as { templateId: string; sentAt: string }[],
   };
 }
 
@@ -403,16 +453,18 @@ app.get("/api/activity", async (context) => {
   const rows = await context.env.DB.prepare(
     `SELECT email_deliveries.id, forms.name AS form_name, email_deliveries.recipient,
             email_deliveries.kind, email_deliveries.status, email_deliveries.attempts,
-            email_deliveries.last_error, email_deliveries.created_at, email_deliveries.delivered_at
+            email_deliveries.last_error, email_deliveries.created_at, email_deliveries.delivered_at,
+            email_templates.name AS template_name
      FROM email_deliveries LEFT JOIN forms ON forms.id = email_deliveries.form_id
+     LEFT JOIN email_templates ON email_templates.id = email_deliveries.template_id
      ORDER BY email_deliveries.created_at DESC LIMIT 100`,
   ).all<{
     id: string; form_name: string | null; recipient: string; kind: DeliveryKind;
     status: "queued" | "retrying" | "delivered" | "failed"; attempts: number; last_error: string | null;
-    created_at: string; delivered_at: string | null;
+    created_at: string; delivered_at: string | null; template_name: string | null;
   }>();
   return context.json({ deliveries: rows.results.map((row) => ({
-    id: row.id, formName: row.form_name, recipient: row.recipient, kind: row.kind, status: row.status,
+    id: row.id, formName: row.form_name, recipient: row.recipient, kind: row.kind, templateName: row.template_name, status: row.status,
     attempts: row.attempts, lastError: row.last_error, createdAt: row.created_at, deliveredAt: row.delivered_at,
   })) });
 });
@@ -425,7 +477,9 @@ app.get("/api/forms", async (context) => {
        (SELECT COUNT(*) FROM submissions WHERE form_id = forms.id AND status = 'spam') AS spam_count
      FROM forms ORDER BY created_at ASC`,
   ).all<FormRow>();
-  return context.json({ forms: rows.results.map(mapForm) });
+  const templates = await context.env.DB.prepare("SELECT * FROM email_templates ORDER BY created_at ASC").all<TemplateRow>();
+  return context.json({ forms: rows.results.map((row) => mapForm(row, templates.results
+    .filter((template) => template.form_id === row.id).map(mapTemplate))) });
 });
 
 app.post("/api/forms", async (context) => {
@@ -458,14 +512,9 @@ app.patch("/api/forms/:formId", async (context) => {
   const successUrl = cleanHttpUrl(body?.successUrl);
   const rateLimit = Number(body?.rateLimitPerMinute);
   const recipientField = typeof body.recipientField === "string" && body.recipientField.trim() ? body.recipientField.trim() : "email";
-  const confirmationTemplate = typeof body.confirmationTemplate === "string" ? body.confirmationTemplate.trim() : "";
-  const followUpTemplate = typeof body.followUpTemplate === "string" ? body.followUpTemplate.trim() : "";
-  const templatePattern = /^[A-Za-z0-9_.-]{0,256}$/;
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,99}$/.test(recipientField)) return context.json({ error: "Invalid recipient field" }, 422);
-  if (!templatePattern.test(confirmationTemplate) || !templatePattern.test(followUpTemplate)) {
-    return context.json({ error: "Template IDs may contain only letters, numbers, dots, dashes, and underscores" }, 422);
-  }
-  if (body.confirmationEnabled && !confirmationTemplate) return context.json({ error: "Add a confirmation template ID before turning it on" }, 422);
+  if (!FIELD_NAME.test(recipientField)) return context.json({ error: "Invalid recipient field" }, 422);
+  const templates = parseTemplates(body.templates ?? []);
+  if (typeof templates === "string") return context.json({ error: templates }, 422);
   if (!name || !fields || !allowedOrigins) return context.json({ error: "Invalid form settings" }, 422);
   if (notificationEmail && !isEmail(notificationEmail)) return context.json({ error: "Invalid notification email" }, 422);
   if (body?.successUrl && !successUrl) return context.json({ error: "Success URL must use HTTP or HTTPS" }, 422);
@@ -483,15 +532,31 @@ app.patch("/api/forms/:formId", async (context) => {
   const result = await context.env.DB.prepare(
     `UPDATE forms SET name = ?, description = ?, fields_json = ?, allowed_origins_json = ?, notification_email = ?,
        success_url = ?, is_active = ?, strict_fields = ?, turnstile_enabled = ?, rate_limit_per_minute = ?, schema_json = ?,
-       recipient_field = ?, confirmation_enabled = ?, confirmation_template = ?, follow_up_template = ?, updated_at = ?
+       recipient_field = ?, updated_at = ?
      WHERE id = ?`,
   ).bind(
     name, description, JSON.stringify(fields), JSON.stringify(allowedOrigins), notificationEmail, successUrl,
     body.isActive === false ? 0 : 1, body.strictFields ? 1 : 0, body.turnstileEnabled ? 1 : 0,
-    rateLimit, JSON.stringify(schema), recipientField, body.confirmationEnabled ? 1 : 0, confirmationTemplate,
-    followUpTemplate, new Date().toISOString(), context.req.param("formId"),
+    rateLimit, JSON.stringify(schema), recipientField, new Date().toISOString(), context.req.param("formId"),
   ).run();
   if (!result.meta.changes) return context.json({ error: "Form not found" }, 404);
+
+  // Templates keep their IDs across saves so delivery history stays linked to them.
+  const formId = context.req.param("formId");
+  const now = new Date().toISOString();
+  const saved = templates.map((template) => ({ ...template, id: template.id ?? crypto.randomUUID() }));
+  await context.env.DB.batch([
+    context.env.DB.prepare("DELETE FROM email_templates WHERE form_id = ? AND id NOT IN (SELECT value FROM json_each(?))")
+      .bind(formId, JSON.stringify(saved.map((template) => template.id))),
+    ...saved.map((template) => context.env.DB.prepare(
+      `INSERT INTO email_templates (id, form_id, name, resend_template, variables_json, auto_send, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET name = excluded.name, resend_template = excluded.resend_template,
+         variables_json = excluded.variables_json, auto_send = excluded.auto_send, updated_at = excluded.updated_at
+       WHERE email_templates.form_id = excluded.form_id`,
+    ).bind(template.id, formId, template.name, template.resendTemplate, JSON.stringify(template.variables),
+      template.autoSend ? 1 : 0, now, now)),
+  ]);
   return context.json({ saved: true });
 });
 
@@ -546,7 +611,7 @@ app.get("/api/forms/:formId/submissions", async (context) => {
   }
 
   const rows = await context.env.DB.prepare(
-    `SELECT id, form_id, payload_json, source_url, status, received_at, ${FOLLOW_UP_AT}
+    `SELECT id, form_id, payload_json, source_url, status, received_at, ${SENT_TEMPLATES}
      FROM submissions WHERE ${conditions.join(" AND ")}
      ORDER BY received_at DESC LIMIT 100`,
   ).bind(...bindings).all<SubmissionRow>();
@@ -555,7 +620,7 @@ app.get("/api/forms/:formId/submissions", async (context) => {
 
 app.get("/api/forms/:formId/submissions/:submissionId", async (context) => {
   const row = await context.env.DB.prepare(
-    `SELECT id, form_id, payload_json, source_url, status, received_at, ${FOLLOW_UP_AT} FROM submissions WHERE id = ? AND form_id = ?`,
+    `SELECT id, form_id, payload_json, source_url, status, received_at, ${SENT_TEMPLATES} FROM submissions WHERE id = ? AND form_id = ?`,
   ).bind(context.req.param("submissionId"), context.req.param("formId")).first<SubmissionRow>();
   if (!row) return context.json({ error: "Submission not found" }, 404);
   return context.json({ submission: mapSubmission(row) });
@@ -574,37 +639,42 @@ app.patch("/api/forms/:formId/submissions/:submissionId", async (context) => {
   return context.json({ status });
 });
 
-// Sends the form's follow-up template to one submission, or to every non-spam
-// submission that has not had a follow-up yet. Owner-entered variables extend the submission fields.
-app.post("/api/forms/:formId/follow-ups", async (context) => {
+// Sends a saved template to one submission, to every non-spam submission that has not
+// received it yet ("pending"), or to every non-spam submission ("all"). `variables` sets
+// send-time values for the template's manual variables.
+app.post("/api/forms/:formId/templates/:templateId/send", async (context) => {
   const body = jsonBody(await context.req.json().catch(() => null));
   const formId = context.req.param("formId");
-  const input = jsonBody(body?.variables) ?? {};
-  const variables: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (!isVariableKey(key)) return context.json({ error: `Invalid variable name "${key}". Use letters, numbers, and underscores.` }, 422);
-    if (typeof value !== "string" || value.length > 2000) return context.json({ error: `Variable "${key}" must be text up to 2000 characters` }, 422);
-    variables[key] = value;
+  const template = await context.env.DB.prepare("SELECT * FROM email_templates WHERE id = ? AND form_id = ?")
+    .bind(context.req.param("templateId"), formId).first<TemplateRow>();
+  if (!template) return context.json({ error: "Email template not found" }, 404);
+  const manualKeys = new Set((JSON.parse(template.variables_json) as TemplateVariable[])
+    .filter((variable) => variable.source === "manual").map((variable) => variable.key));
+  const overrides: Record<string, string> = {};
+  for (const [key, value] of Object.entries(jsonBody(body?.variables) ?? {})) {
+    if (!manualKeys.has(key)) return context.json({ error: `"${key}" is not a manual variable of this template` }, 422);
+    if (typeof value !== "string" || value.length > 2000) return context.json({ error: `"${key}" must be text up to 2000 characters` }, 422);
+    overrides[key] = value;
   }
-  if (Object.keys(variables).length > 20) return context.json({ error: "Use at most 20 variables" }, 422);
   const submissionId = typeof body?.submissionId === "string" ? body.submissionId : null;
+  const audience = body?.audience === "all" ? "all" : "pending";
 
-  const form = await context.env.DB.prepare("SELECT recipient_field, follow_up_template FROM forms WHERE id = ?")
-    .bind(formId).first<Pick<FormRow, "recipient_field" | "follow_up_template">>();
-  if (!form) return context.json({ error: "Form not found" }, 404);
-  if (!form.follow_up_template) return context.json({ error: "Add a follow-up template ID in form settings first" }, 422);
   const settings = await loadSettings(context.env.DB);
   if (!emailReady(settings, context.env) || settings.email_provider !== "resend") {
     return context.json({ error: "Enable Resend email delivery in Settings first" }, 422);
   }
+  const form = await context.env.DB.prepare("SELECT recipient_field FROM forms WHERE id = ?")
+    .bind(formId).first<Pick<FormRow, "recipient_field">>();
+  if (!form) return context.json({ error: "Form not found" }, 404);
 
   const rows = await context.env.DB.prepare(
     submissionId
       ? "SELECT id, payload_json FROM submissions WHERE form_id = ? AND id = ?"
-      : `SELECT id, payload_json FROM submissions WHERE form_id = ? AND status != 'spam' AND NOT EXISTS (
-           SELECT 1 FROM email_deliveries WHERE submission_id = submissions.id AND kind = 'follow_up' AND status != 'failed'
-         ) ORDER BY received_at ASC`,
-  ).bind(...(submissionId ? [formId, submissionId] : [formId])).all<{ id: string; payload_json: string }>();
+      : `SELECT id, payload_json FROM submissions WHERE form_id = ? AND status != 'spam' ${audience === "pending" ? `AND NOT EXISTS (
+           SELECT 1 FROM email_deliveries WHERE submission_id = submissions.id AND template_id = ? AND status != 'failed'
+         )` : ""} ORDER BY received_at ASC`,
+  ).bind(...(submissionId ? [formId, submissionId] : audience === "pending" ? [formId, template.id] : [formId]))
+    .all<{ id: string; payload_json: string }>();
   if (submissionId && !rows.results.length) return context.json({ error: "Submission not found" }, 404);
   const recipients = rows.results.flatMap((row) => {
     const recipient = (JSON.parse(row.payload_json) as SubmissionPayload)[form.recipient_field];
@@ -613,7 +683,7 @@ app.post("/api/forms/:formId/follow-ups", async (context) => {
   if (submissionId && !recipients.length) {
     return context.json({ error: `This submission has no valid email in "${form.recipient_field}"` }, 422);
   }
-  const queued = await queueFollowUpEmails(context.env, formId, recipients, variables);
+  const queued = await queueTemplateEmails(context.env, formId, template.id, recipients, overrides);
   return context.json({ queued, skipped: rows.results.length - queued }, 202);
 });
 
@@ -640,12 +710,11 @@ app.options("/f/:slug", async (context) => {
 app.post("/f/:slug", async (context) => {
   const form = await context.env.DB.prepare(
     `SELECT id, fields_json, schema_json, allowed_origins_json, notification_email, success_url, strict_fields,
-            turnstile_enabled, rate_limit_per_minute, recipient_field, confirmation_enabled, confirmation_template
+            turnstile_enabled, rate_limit_per_minute, recipient_field
      FROM forms WHERE slug = ? AND is_active = 1`,
   ).bind(context.req.param("slug")).first<Pick<FormRow,
     "id" | "fields_json" | "schema_json" | "allowed_origins_json" | "notification_email" | "success_url" |
-    "strict_fields" | "turnstile_enabled" | "rate_limit_per_minute" | "recipient_field" | "confirmation_enabled" |
-    "confirmation_template"
+    "strict_fields" | "turnstile_enabled" | "rate_limit_per_minute" | "recipient_field"
   >>();
   if (!form) return context.json({ error: "Form not found" }, 404);
 
@@ -698,9 +767,8 @@ app.post("/f/:slug", async (context) => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(id, form.id, JSON.stringify(payload), sourceUrl, status, idempotencyKey, receivedAt).run();
 
-    const submitterEmail = payload[form.recipient_field];
-    const confirm = Boolean(form.confirmation_enabled && form.confirmation_template && isEmail(submitterEmail));
-    if (status !== "spam" && (form.notification_email || confirm)) {
+    if (status !== "spam") {
+      const submitterEmail = payload[form.recipient_field];
       const settings = await loadSettings(context.env.DB);
       if (emailReady(settings, context.env)) {
         if (form.notification_email) {
@@ -708,10 +776,13 @@ app.post("/f/:slug", async (context) => {
             console.error("Failed to queue submission email", error);
           }));
         }
-        if (confirm && settings.email_provider === "resend") {
-          context.executionCtx.waitUntil(queueConfirmationEmail(context.env, form.id, id, String(submitterEmail).trim().toLowerCase()).catch((error) => {
-            console.error("Failed to queue confirmation email", error);
-          }));
+        if (isEmail(submitterEmail) && settings.email_provider === "resend") {
+          const recipient = [{ submissionId: id, recipient: submitterEmail.trim().toLowerCase() }];
+          context.executionCtx.waitUntil(context.env.DB.prepare("SELECT id FROM email_templates WHERE form_id = ? AND auto_send = 1")
+            .bind(form.id).all<{ id: string }>()
+            .then((templates) => Promise.all(templates.results.map((template) =>
+              queueTemplateEmails(context.env, form.id, template.id, recipient))))
+            .catch((error) => console.error("Failed to queue template emails", error)));
         }
       }
     }

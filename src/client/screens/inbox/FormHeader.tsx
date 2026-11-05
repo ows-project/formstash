@@ -1,4 +1,4 @@
-import { Code2, Copy, Download, MailPlus, Settings } from "lucide-react";
+import { Code2, Copy, Download, Send, Settings } from "lucide-react";
 import { toast } from "sonner";
 import type { FormSummary } from "../../../shared/types";
 import { cn } from "../../lib/cn";
@@ -10,7 +10,7 @@ interface FormHeaderProps {
   form: FormSummary;
   onIntegrate: () => void;
   onSettings: () => void;
-  onFollowUp: () => void;
+  onSendEmail: () => void;
 }
 
 export function EndpointChip({ slug, className }: { slug: string; className?: string }) {
@@ -44,7 +44,7 @@ export function EndpointChip({ slug, className }: { slug: string; className?: st
   );
 }
 
-export function FormHeader({ form, onIntegrate, onSettings, onFollowUp }: FormHeaderProps) {
+export function FormHeader({ form, onIntegrate, onSettings, onSendEmail }: FormHeaderProps) {
   return (
     <header className="grid gap-4 px-4 pt-5 pb-4 sm:px-6 sm:pt-7">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -59,9 +59,9 @@ export function FormHeader({ form, onIntegrate, onSettings, onFollowUp }: FormHe
           <Button onClick={onIntegrate}>
             <Code2 /> Integrate
           </Button>
-          {form.followUpTemplate && (
-            <Button variant="secondary" onClick={onFollowUp} aria-label="Send follow-up">
-              <MailPlus /> <span className="max-md:hidden">Follow-up</span>
+          {form.templates.length > 0 && (
+            <Button variant="secondary" onClick={onSendEmail} aria-label="Send email">
+              <Send /> <span className="max-md:hidden">Send email</span>
             </Button>
           )}
           <Button variant="secondary" asChild>

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Collapsible } from "radix-ui";
-import { ArrowLeft, Braces, ChevronDown, CloudOff, FileQuestion, Mail, MailOpen, MailPlus, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowLeft, Braces, ChevronDown, CloudOff, FileQuestion, Mail, MailOpen, Send, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Submission, SubmissionStatus } from "../../../shared/types";
 import { displayValue, formatDateTime, formatTime, humanizeField, mailtoHref, submissionTitle } from "../../lib/format";
 import { CodeBlock } from "../../components/CodeBlock";
@@ -26,8 +26,10 @@ interface SubmissionDetailProps {
   onClose: () => void;
   onStatus: (submission: Submission, status: SubmissionStatus) => void;
   onDelete: (submission: Submission) => Promise<void>;
-  /** Present when the form has a follow-up template. */
-  onFollowUp?: (submission: Submission) => void;
+  /** Names of the form's email templates by ID, for the sent list. */
+  templateNames: Record<string, string>;
+  /** Present when the form has email templates. */
+  onSendEmail?: (submission: Submission) => void;
 }
 
 function orderedEntries(submission: Submission, fieldOrder: string[]) {
@@ -50,7 +52,7 @@ function DetailBar({ onClose, children }: { onClose: () => void; children?: Reac
   );
 }
 
-export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder, onClose, onStatus, onDelete, onFollowUp }: SubmissionDetailProps) {
+export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder, onClose, onStatus, onDelete, templateNames, onSendEmail }: SubmissionDetailProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (state === "loading" || !submission) {
@@ -120,10 +122,14 @@ export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder
             <dt className="text-[13px] font-medium text-muted">Received</dt>
             <dd className="m-0 text-sm text-ink">{formatDateTime(submission.receivedAt)}</dd>
           </div>
-          {submission.followUpAt && (
+          {submission.sentTemplates.length > 0 && (
             <div className="grid gap-1 px-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-4">
-              <dt className="text-[13px] font-medium text-muted">Follow-up</dt>
-              <dd className="m-0 text-sm text-ink">Sent {formatDateTime(submission.followUpAt)}</dd>
+              <dt className="text-[13px] font-medium text-muted">Emails sent</dt>
+              <dd className="m-0 grid gap-0.5 text-sm text-ink">
+                {submission.sentTemplates.map((sent, index) => (
+                  <span key={index}>{templateNames[sent.templateId] ?? "Deleted template"} <span className="text-muted">· {formatDateTime(sent.sentAt)}</span></span>
+                ))}
+              </dd>
             </div>
           )}
         </dl>
@@ -150,9 +156,9 @@ export function SubmissionDetail({ submission, state, error, onRetry, fieldOrder
         <Button variant="secondary" size="sm" onClick={() => onStatus(submission, submission.status === "spam" ? "read" : "spam")}>
           {submission.status === "spam" ? <><ShieldCheck /> Not spam</> : <><ShieldAlert /> Mark spam</>}
         </Button>
-        {onFollowUp && submission.status !== "spam" && (
-          <Button variant="secondary" size="sm" onClick={() => onFollowUp(submission)}>
-            <MailPlus /> Follow-up
+        {onSendEmail && submission.status !== "spam" && (
+          <Button variant="secondary" size="sm" onClick={() => onSendEmail(submission)}>
+            <Send /> Send email
           </Button>
         )}
         <Button variant="danger" size="sm" className="ml-auto" onClick={() => setConfirmDelete(true)}>

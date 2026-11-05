@@ -4,7 +4,7 @@ import { avatarGradient } from "./avatar";
 import { displayValue, formatTime, humanizeField, initials, mailtoHref, sourceLabel, submissionTitle } from "./format";
 
 function submission(payload: Submission["payload"], sourceUrl: string | null = null): Submission {
-  return { id: "s1", formId: "f1", payload, sourceUrl, status: "unread", receivedAt: "2026-01-01T00:00:00.000Z", followUpAt: null };
+  return { id: "s1", formId: "f1", payload, sourceUrl, status: "unread", receivedAt: "2026-01-01T00:00:00.000Z", sentTemplates: [] };
 }
 
 describe("formatTime", () => {
