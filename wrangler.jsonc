@@ -47,6 +47,45 @@
   "triggers": {
     "crons": ["0 3 * * *"]
   },
+  // A second, independent instance with its own owner, data, queue, and secrets.
+  // Deployed with `--env tuntasalkitab` after the main deploy (see ci:deploy).
+  "env": {
+    "tuntasalkitab": {
+      "name": "formstash-tuntasalkitab",
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "formstash-tuntasalkitab",
+          "database_id": "bda339bb-79ba-4d36-8e0d-c29a265254b1",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "routes": [
+        {
+          "pattern": "formstash.tuntasalkitab.com",
+          "custom_domain": true
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "EMAIL_QUEUE",
+            "queue": "formstash-tuntasalkitab-email"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "formstash-tuntasalkitab-email",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 4,
+            "dead_letter_queue": "formstash-tuntasalkitab-email-dlq"
+          }
+        ]
+      }
+    }
+  },
   // Branch Previews never touch production data. They share a separate database
   // and an email queue with no consumer, so preview submissions never send email.
   "previews": {

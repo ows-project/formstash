@@ -56,6 +56,8 @@ Workers Builds is connected to this repository:
 - Pushing to `main` runs `pnpm ci:build` (typecheck, tests, build), then `pnpm ci:deploy`, which applies D1 migrations and deploys to production.
 - Pushing any other branch runs `pnpm ci:preview`. It migrates the shared preview database and creates or updates a Worker Preview at `<branch>-formstash.<subdomain>.workers.dev`, posted as a comment on the branch's pull request.
 
+- After the production deploy, `pnpm ci:deploy` also migrates and deploys the `tuntasalkitab` Wrangler environment: a separate instance at `formstash.tuntasalkitab.com` with its own Worker (`formstash-tuntasalkitab`), D1 database, queues, owner, and secrets (`APP_SECRET`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`). Set its secrets with `pnpm wrangler secret put <NAME> --env tuntasalkitab`.
+
 Previews use the `formstash-preview` D1 database and the `formstash-email-preview` queue. That queue has no consumer, so previews never send email. Previews get `APP_SECRET` from the Preview base config (`pnpm wrangler preview base-config secret put APP_SECRET`). The Workers Builds API token needs **D1 Edit** and **Queues Edit** in addition to its default permissions.
 
 The deployment serves the React dashboard and Hono API from the same Worker. The daily retention job runs at 03:00 UTC. Do not commit `.dev.vars` or other deployment secrets. Keep `APP_SECRET` stable: changing it makes previously stored SMTP and Turnstile credentials unreadable until they are saved again.

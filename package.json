@@ -11,10 +11,12 @@
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply formstash --local",
     "db:migrate:remote": "wrangler d1 migrations apply formstash --remote",
+    "db:migrate:tuntasalkitab": "wrangler d1 migrations apply formstash-tuntasalkitab --remote --env tuntasalkitab",
     "db:migrate:preview": "wrangler d1 migrations apply formstash-preview --remote --config wrangler.preview-migrations.jsonc",
     "deploy": "pnpm build && wrangler deploy",
     "ci:build": "pnpm typecheck && pnpm test && pnpm build",
-    "ci:deploy": "pnpm db:migrate:remote && wrangler deploy",
+    "ci:deploy": "pnpm db:migrate:remote && wrangler deploy && pnpm ci:deploy:tuntasalkitab",
+    "ci:deploy:tuntasalkitab": "pnpm db:migrate:tuntasalkitab && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --env tuntasalkitab",
     "ci:preview": "pnpm db:migrate:preview && wrangler preview"
   },
   "dependencies": {
