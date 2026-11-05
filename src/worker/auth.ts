@@ -1,7 +1,8 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
-const ITERATIONS = 210_000;
+// Cloudflare's Web Crypto rejects PBKDF2 above 100,000 iterations; local workerd does not.
+const ITERATIONS = 100_000;
 const SESSION_DAYS = 30;
 const encoder = new TextEncoder();
 
@@ -56,7 +57,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
   if (algorithm !== "pbkdf2-sha256" || !iterationValue || !saltValue || !hashValue) return false;
 
   const iterations = Number(iterationValue);
-  if (!Number.isSafeInteger(iterations) || iterations < 100_000 || iterations > 1_000_000) return false;
+  if (!Number.isSafeInteger(iterations) || iterations < 100_000 || iterations > ITERATIONS) return false;
 
   const expected = decode(hashValue);
   const actual = await derive(password, decode(saltValue), iterations);
